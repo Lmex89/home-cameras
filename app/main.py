@@ -1,3 +1,11 @@
+"""Application entry-point for the ONVIF snapshot monitor.
+
+Configures timezone and logging, defines the FastAPI lifespan handler
+that initializes the database, seeds cameras, and starts the scheduler,
+and mounts all routers and static assets.
+"""
+
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -7,6 +15,13 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.core.config import settings
+
+os.environ["TZ"] = settings.timezone
+try:
+    import time
+    time.tzset()
+except AttributeError:
+    pass
 
 # ── Loguru configuration ──────────────────────────────────────────────
 logger.remove()
@@ -39,6 +54,18 @@ from app.scheduler import scheduler, load_schedule
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Manage application startup and shutdown lifecycle.
+
+    Initializes the data directory, applies the SQL schema, seeds cameras
+    from YAML, and starts the APScheduler. On shutdown it stops the
+    scheduler.
+
+    Args:
+        app: The FastAPI application instance.
+
+    Yields:
+        Control back to the server while the app is running.
+    """
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     schema_path = settings.sql_dir / "schema.sql"
     await init_db(schema_path)

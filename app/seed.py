@@ -1,3 +1,9 @@
+"""YAML-to-database seeder for cameras.
+
+Reads ``cameras.yaml`` at startup and inserts camera records when the
+database is empty, providing first-run bootstrap data.
+"""
+
 from pathlib import Path
 
 import yaml
@@ -10,6 +16,17 @@ from app.domain.models import Camera
 
 
 async def seed_from_yaml(yaml_path: Path) -> bool:
+    """Seed the database with cameras defined in a YAML file.
+
+    Skips seeding when the file is missing, the database already contains
+    cameras, or the YAML defines none.
+
+    Args:
+        yaml_path: Path to the YAML file containing a ``cameras`` list.
+
+    Returns:
+        ``True`` when cameras were seeded, ``False`` otherwise.
+    """
     if not yaml_path.exists():
         logger.warning(f"cameras.yaml not found at {yaml_path}, skipping seed")
         return False
@@ -37,7 +54,7 @@ async def seed_from_yaml(yaml_path: Path) -> bool:
                 password=raw.get("password", ""),
                 profile_token=raw.get("profile_token"),
                 snapshot_url=raw.get("snapshot_url"),
-                interval_minutes=raw.get("interval_minutes", settings.default_interval_minutes),
+                interval_seconds=raw.get("interval_seconds", settings.default_interval_seconds),
                 enabled=raw.get("enabled", True),
             )
             await uow.cameras.add(camera)

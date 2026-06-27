@@ -78,6 +78,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
             let html = '<div class="row g-4">';
             for (const cam of data.cameras) {
+                const snapshotsHtml = cam.snapshots.map(snap => {
+                    const time = new Date(snap.captured_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                    return `
+                        <div class="text-center">
+                            <a href="#" class="report-snapshot-link" data-snapshot-id="${snap.id}">
+                                <img src="/api/snapshots/image/${snap.id}" class="snapshot-thumb-sm" alt="${time}" loading="lazy">
+                            </a>
+                            <small class="d-block text-muted">${time}</small>
+                        </div>`;
+                }).join('');
                 html += `
                     <div class="col-12">
                         <div class="card bg-dark">
@@ -86,18 +96,12 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <span class="badge bg-info">${cam.total_snapshots} capturas</span>
                             </div>
                             <div class="card-body">
-                                <div class="d-flex flex-wrap gap-2">`;
-                for (const snap of cam.snapshots) {
-                    const time = new Date(snap.captured_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-                    html += `
-                        <div class="text-center">
-                            <a href="#" class="report-snapshot-link" data-snapshot-id="${snap.id}">
-                                <img src="/api/snapshots/image/${snap.id}" class="snapshot-thumb-sm" alt="${time}" loading="lazy">
-                            </a>
-                            <small class="d-block text-muted">${time}</small>
-                        </div>`;
-                }
-                html += `       </div>
+                                <div class="d-flex flex-wrap gap-2">${snapshotsHtml}</div>
+                            </div>
+                            <div class="card-footer">
+                                <button class="btn btn-success btn-sm btn-create-video" data-camera-id="${cam.camera_id}" data-date="${date}">
+                                    <i class="bi bi-film"></i> Crear Video
+                                </button>
                             </div>
                         </div>
                     </div>`;
@@ -112,6 +116,39 @@ document.addEventListener('DOMContentLoaded', function () {
                     document.getElementById('reportSnapshotImage').src = '/api/snapshots/image/' + id;
                     const modal = new bootstrap.Modal(document.getElementById('reportSnapshotModal'));
                     modal.show();
+                });
+            });
+
+            document.querySelectorAll('.btn-create-video').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const cameraId = this.dataset.cameraId;
+                    const videoDate = this.dataset.date;
+                    const originalHtml = this.innerHTML;
+                    const alerts = document.getElementById('report-alerts');
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Generando...';
+                    try {
+                        const resp = await fetch(`/api/report/${videoDate}/video/${cameraId}`);
+                        if (!resp.ok) {
+                            const text = await resp.text();
+                            throw new Error(text || 'Error al generar video');
+                        }
+                        const blob = await resp.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `timelapse_camera_${cameraId}_${videoDate}.mp4`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        showAlert(alerts, 'Video descargado exitosamente', 'success');
+                    } catch (err) {
+                        showAlert(alerts, 'Error al generar video: ' + err.message, 'danger');
+                    } finally {
+                        this.disabled = false;
+                        this.innerHTML = originalHtml;
+                    }
                 });
             });
 
@@ -137,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('formName').value = cam.name;
             document.getElementById('formHost').value = cam.host;
             document.getElementById('formPort').value = cam.port;
-            document.getElementById('formInterval').value = cam.interval_minutes;
+            document.getElementById('formInterval').value = cam.interval_seconds;
             document.getElementById('formSnapshotUrl').value = cam.snapshot_url || '';
             document.getElementById('formEnabled').checked = cam.enabled;
             document.getElementById('formUsername').value = cam.username;
@@ -155,7 +192,7 @@ document.addEventListener('DOMContentLoaded', function () {
         formTestResult.classList.add('d-none');
         document.getElementById('formEnabled').checked = true;
         document.getElementById('formPort').value = '80';
-        document.getElementById('formInterval').value = '1';
+        document.getElementById('formInterval').value = '60';
         document.getElementById('formSnapshotUrl').value = '';
     }
 
@@ -219,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function () {
             username: document.getElementById('formUsername').value,
             password: document.getElementById('formPassword').value,
             snapshot_url: document.getElementById('formSnapshotUrl').value || null,
-            interval_minutes: parseInt(document.getElementById('formInterval').value) || 1,
+            interval_seconds: parseInt(document.getElementById('formInterval').value) || 60,
             enabled: document.getElementById('formEnabled').checked,
         };
 

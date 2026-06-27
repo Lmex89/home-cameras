@@ -1,3 +1,9 @@
+"""FastAPI router for snapshot retrieval endpoints.
+
+Exposes endpoints to fetch snapshot metadata, query snapshots by date
+for a camera, and stream snapshot image files.
+"""
+
 from datetime import date
 from pathlib import Path
 
@@ -18,6 +24,18 @@ async def get_snapshot(
     snapshot_id: int,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """Retrieve a single snapshot by its identifier.
+
+    \f
+    Args:
+        snapshot_id: The unique identifier of the snapshot.
+
+    Returns:
+        The serialized snapshot record.
+
+    Raises:
+        HTTPException: 404 if the snapshot does not exist.
+    """
     snap = await service._uow.snapshots.get_by_id(snapshot_id)
     if not snap:
         logger.warning(f"Snapshot {snapshot_id} not found")
@@ -31,6 +49,16 @@ async def get_camera_snapshots(
     snapshot_date: date,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """List all snapshots for a camera on a given date.
+
+    \f
+    Args:
+        camera_id: The unique identifier of the camera.
+        snapshot_date: The date to query snapshots for.
+
+    Returns:
+        A list of serialized snapshot records captured on that date.
+    """
     snapshots = await service.get_camera_snapshots(camera_id, snapshot_date)
     logger.debug(f"Camera {camera_id} snapshots on {snapshot_date}: {len(snapshots)}")
     return [SnapshotRead.model_validate(s) for s in snapshots]
@@ -41,6 +69,18 @@ async def get_snapshot_image(
     snapshot_id: int,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """Stream a snapshot's JPEG image file.
+
+    \f
+    Args:
+        snapshot_id: The unique identifier of the snapshot.
+
+    Returns:
+        A FileResponse serving the JPEG image.
+
+    Raises:
+        HTTPException: 404 if the snapshot record or image file is missing.
+    """
     snap = await service._uow.snapshots.get_by_id(snapshot_id)
     if not snap:
         logger.warning(f"Snapshot image: snapshot {snapshot_id} not found")

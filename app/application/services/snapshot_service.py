@@ -1,8 +1,18 @@
+"""Snapshot capture and reporting service.
+
+Implements the multi-strategy snapshot pipeline (direct URL, ONVIF
+``GetSnapshotUri``, RTSP+ffmpeg fallback), persists snapshots via the
+UnitOfWork, and produces daily reports, dashboard data, and timelapse
+videos.
+"""
+
 import asyncio
-import asyncio
+import shutil
+import tempfile
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from loguru import logger
@@ -14,55 +24,107 @@ from app.infrastructure.onvif import ONVIFCameraClient
 
 
 class SnapshotService:
+    """Capture snapshots from cameras and provide reporting utilities.
+
+    Receives a ``UnitOfWork`` and an ``ONVIFCameraClient`` via constructor
+    injection so persistence and the ONVIF wire protocol stay decoupled
+    (dependency inversion).
+    """
+
     def __init__(self, uow: UnitOfWork, onvif: ONVIFCameraClient):
+        """Inject the unit of work and ONVIF client used by this service.
+
+        Args:
+            uow: UnitOfWork wrapping the async SQLAlchemy session.
+            onvif: ONVIF camera client used for URI resolution.
+        """
         self._uow = uow
         self._onvif = onvif
 
-    async def _save_image(self, camera: Camera, data: bytes) -> Path:
-        now = datetime.now()
+    async def _save_image(self, camera: Camera, data: bytes) -> tuple[Path, datetime]:
+        """Write raw image bytes to disk under the snapshots directory.
+
+        Args:
+            camera: The camera the image belongs to.
+            data: Raw JPEG bytes to persist.
+
+        Returns:
+            Tuple of the absolute file path and capture timestamp.
+        """
+        now = datetime.now(ZoneInfo(settings.timezone))
         rel_path = Path(str(camera.id)) / now.strftime("%Y/%m/%d")
         filename = f"{now.strftime('%H%M%S')}.jpg"
         full_dir = settings.snapshots_dir / rel_path
         full_dir.mkdir(parents=True, exist_ok=True)
         file_path = full_dir / filename
         file_path.write_bytes(data)
-        return file_path
+        return file_path, now
 
-    async def _capture_direct_url(self, camera: Camera) -> tuple[Path | None, str | None]:
+    async def _capture_direct_url(self, camera: Camera) -> tuple[Path | None, datetime | None, str | None]:
+        """Fetch a snapshot from the camera's configured direct URL.
+
+        Args:
+            camera: Camera whose ``snapshot_url`` will be requested.
+
+        Returns:
+            Tuple of (file path, capture time, error). On failure the path
+            and time are ``None`` and the error string is populated.
+        """
         url = camera.snapshot_url
         if not url:
-            return None, None
+            return None, None, None
         logger.info(f"Camera {camera.name}: trying direct URL {url}")
         try:
             auth = (camera.username, camera.password) if camera.username else None
             async with httpx.AsyncClient(timeout=30, verify=False) as client:
                 resp = await client.get(url, auth=auth)
                 resp.raise_for_status()
-            file_path = await self._save_image(camera, resp.content)
-            return file_path, None
+            file_path, captured_at = await self._save_image(camera, resp.content)
+            return file_path, captured_at, None
         except Exception as e:
             msg = str(e)
             logger.warning(f"Camera {camera.name}: direct URL failed: {msg}")
-            return None, msg
+            return None, None, msg
 
-    async def _capture_onvif(self, camera: Camera) -> tuple[Path | None, str | None]:
+    async def _capture_onvif(self, camera: Camera) -> tuple[Path | None, datetime | None, str | None]:
+        """Fetch a snapshot via ONVIF ``GetSnapshotUri``.
+
+        Args:
+            camera: Camera used to resolve the snapshot URI.
+
+        Returns:
+            Tuple of (file path, capture time, error). On failure the path
+            and time are ``None`` and the error string is populated.
+        """
         logger.info(f"Camera {camera.name}: trying ONVIF GetSnapshotUri")
         try:
             uri, error = self._onvif.get_snapshot_uri(
                 camera.host, camera.port, camera.username, camera.password, camera.profile_token
             )
             if error or not uri:
-                return None, error or "Empty URI"
+                return None, None, error or "Empty URI"
             auth_uri = self._onvif.build_auth_url(uri, camera.username, camera.password)
             async with httpx.AsyncClient(timeout=30, verify=False) as client:
                 resp = await client.get(auth_uri)
                 resp.raise_for_status()
-            file_path = await self._save_image(camera, resp.content)
-            return file_path, None
+            file_path, captured_at = await self._save_image(camera, resp.content)
+            return file_path, captured_at, None
         except Exception as e:
-            return None, str(e)
+            return None, None, str(e)
 
-    async def _capture_rtsp(self, camera: Camera) -> tuple[Path | None, str | None]:
+    async def _capture_rtsp(self, camera: Camera) -> tuple[Path | None, datetime | None, str | None]:
+        """Grab a single frame from the RTSP stream using ffmpeg.
+
+        Resolution strategy mirrors the inline comment: specific profile,
+        then best resolution, then JPEG, then first available stream.
+
+        Args:
+            camera: Camera whose RTSP stream will be captured.
+
+        Returns:
+            Tuple of (file path, capture time, error). On failure the path
+            and time are ``None`` and the error string is populated.
+        """
         logger.info(f"Camera {camera.name}: trying RTSP+ffmpeg")
         try:
             # Strategy: specific profile → best resolution → JPEG → first available
@@ -84,7 +146,7 @@ class SnapshotService:
                     camera.host, camera.port, camera.username, camera.password
                 )
             if not stream_uri:
-                return None, err or "No RTSP stream found"
+                return None, None, err or "No RTSP stream found"
 
             auth_uri = self._onvif.build_auth_url(stream_uri, camera.username, camera.password)
 
@@ -102,60 +164,96 @@ class SnapshotService:
             stdout, stderr = await proc.communicate()
             if proc.returncode != 0 or not stdout:
                 error_msg = (stderr.decode(errors='replace')[:200] if stderr else "ffmpeg returned no data")
-                return None, f"ffmpeg failed: {error_msg}"
+                return None, None, f"ffmpeg failed: {error_msg}"
 
-            file_path = await self._save_image(camera, stdout)
-            return file_path, None
+            file_path, captured_at = await self._save_image(camera, stdout)
+            return file_path, captured_at, None
         except FileNotFoundError:
-            return None, "ffmpeg not found in PATH"
+            return None, None, "ffmpeg not found in PATH"
         except Exception as e:
-            return None, str(e)
+            return None, None, str(e)
 
     async def capture(self, camera: Camera) -> Snapshot:
-        snapshot = Snapshot(
-            camera_id=camera.id,
-            image_path="",
-        )
+        """Capture a snapshot trying every available strategy in order.
 
+        Strategies are attempted sequentially: direct URL, ONVIF
+        ``GetSnapshotUri``, then RTSP+ffmpeg. The first success is
+        persisted and returned. When all fail an error snapshot record is
+        stored.
+
+        Args:
+            camera: Camera to capture a snapshot from.
+
+        Returns:
+            The persisted ``Snapshot`` (``status`` is ``"success"`` or
+            ``"error"``).
+        """
         # Strategy 1: direct URL
         if camera.snapshot_url:
-            file_path, error = await self._capture_direct_url(camera)
+            file_path, captured_at, error = await self._capture_direct_url(camera)
             if file_path:
-                snapshot.image_path = str(file_path.relative_to(settings.snapshots_dir))
-                snapshot.file_size = file_path.stat().st_size
-                snapshot.status = "success"
+                snapshot = Snapshot(
+                    camera_id=camera.id,
+                    image_path=str(file_path.relative_to(settings.snapshots_dir)),
+                    file_size=file_path.stat().st_size,
+                    captured_at=captured_at,
+                    status="success",
+                )
                 logger.info(f"Camera {camera.name}: direct URL snapshot saved")
                 await self._uow.snapshots.add(snapshot)
                 return snapshot
-            snapshot.error_message = error
+            last_error = error or "direct URL failed"
 
         # Strategy 2: ONVIF GetSnapshotUri
-        file_path, error = await self._capture_onvif(camera)
+        file_path, captured_at, error = await self._capture_onvif(camera)
         if file_path:
-            snapshot.image_path = str(file_path.relative_to(settings.snapshots_dir))
-            snapshot.file_size = file_path.stat().st_size
-            snapshot.status = "success"
+            snapshot = Snapshot(
+                camera_id=camera.id,
+                image_path=str(file_path.relative_to(settings.snapshots_dir)),
+                file_size=file_path.stat().st_size,
+                captured_at=captured_at,
+                status="success",
+            )
             logger.info(f"Camera {camera.name}: ONVIF snapshot saved to {file_path}")
             await self._uow.snapshots.add(snapshot)
             return snapshot
+        last_error = error
 
         # Strategy 3: RTSP+ffmpeg fallback
-        file_path, error = await self._capture_rtsp(camera)
+        file_path, captured_at, error = await self._capture_rtsp(camera)
         if file_path:
-            snapshot.image_path = str(file_path.relative_to(settings.snapshots_dir))
-            snapshot.file_size = file_path.stat().st_size
-            snapshot.status = "success"
+            snapshot = Snapshot(
+                camera_id=camera.id,
+                image_path=str(file_path.relative_to(settings.snapshots_dir)),
+                file_size=file_path.stat().st_size,
+                captured_at=captured_at,
+                status="success",
+            )
             logger.info(f"Camera {camera.name}: RTSP snapshot saved to {file_path}")
             await self._uow.snapshots.add(snapshot)
             return snapshot
+        last_error = error
 
-        snapshot.status = "error"
-        snapshot.error_message = error or "All capture methods failed"
+        snapshot = Snapshot(
+            camera_id=camera.id,
+            image_path="",
+            status="error",
+            error_message=last_error or "All capture methods failed",
+        )
         logger.error(f"Camera {camera.name}: all capture methods failed: {snapshot.error_message}")
         await self._uow.snapshots.add(snapshot)
         return snapshot
 
     async def force_capture(self, camera_id: int) -> Snapshot | None:
+        """Trigger an immediate capture by camera id.
+
+        Args:
+            camera_id: Primary key of the camera to capture.
+
+        Returns:
+            The captured ``Snapshot`` or ``None`` when the camera is
+            missing.
+        """
         camera = await self._uow.cameras.get_by_id(camera_id)
         if not camera:
             logger.warning(f"Force capture: camera {camera_id} not found")
@@ -164,6 +262,15 @@ class SnapshotService:
         return await self.capture(camera)
 
     async def get_daily_report(self, target_date: date):
+        """Group all snapshots for a date by camera.
+
+        Args:
+            target_date: The date to query (in project timezone).
+
+        Returns:
+            Dict keyed by camera_id with camera name and snapshot list,
+            or empty dict if no snapshots exist.
+        """
         all_snapshots = await self._uow.snapshots.get_by_date(target_date)
         logger.debug(f"Daily report for {target_date}: {len(all_snapshots)} snapshots total")
         grouped: dict[int, list[Snapshot]] = defaultdict(list)
@@ -182,11 +289,26 @@ class SnapshotService:
     async def get_camera_snapshots(
         self, camera_id: int, target_date: date
     ) -> list[Snapshot]:
+        """List snapshots for a single camera on a given date.
+
+        Args:
+            camera_id: Primary key of the camera.
+            target_date: Date to filter snapshots by.
+
+        Returns:
+            Snapshots captured for that camera on that date (may be empty).
+        """
         snapshots = await self._uow.snapshots.get_by_camera_and_date(camera_id, target_date)
         logger.debug(f"Camera {camera_id} snapshots on {target_date}: {len(snapshots)}")
         return snapshots
 
     async def get_dashboard_data(self):
+        """Build dashboard payload of cameras and their last snapshot.
+
+        Returns:
+            List of dicts merging validated camera data with its
+            ``last_snapshot`` (or ``None`` when none exists).
+        """
         from app.domain.schemas import CameraRead, SnapshotRead
         cameras = await self._uow.cameras.get_all()
         camera_ids = [c.id for c in cameras]
@@ -202,4 +324,62 @@ class SnapshotService:
             })
         return result
 
+    async def generate_daily_video(self, camera_id: int, target_date: date) -> tuple[Path, Path]:
+        """Render a timelapse MP4 from a camera's snapshots for a date.
 
+        Args:
+            camera_id: Primary key of the camera.
+            target_date: Date of snapshots to include.
+
+        Returns:
+            Tuple of (output video path, temp working directory).
+
+        Raises:
+            ValueError: When no snapshots or image files exist for the
+                given camera and date.
+            RuntimeError: When ffmpeg fails to produce the video.
+        """
+        snapshots = await self._uow.snapshots.get_by_camera_and_date(camera_id, target_date)
+        snapshots.sort(key=lambda s: s.captured_at)
+        if not snapshots:
+            raise ValueError(f"No snapshots for camera {camera_id} on {target_date}")
+
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"tl_{camera_id}_"))
+        file_list = temp_dir / "files.txt"
+
+        with open(file_list, "w") as f:
+            for snap in snapshots:
+                full_path = settings.snapshots_dir / snap.image_path
+                if full_path.exists():
+                    f.write(f"file '{full_path}'\n")
+                    f.write("duration 0.1\n")
+
+        if file_list.stat().st_size == 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise ValueError(f"No image files found for camera {camera_id} on {target_date}")
+
+        output_path = temp_dir / f"timelapse_{camera_id}_{target_date.isoformat()}.mp4"
+
+        proc = await asyncio.create_subprocess_exec(
+            'ffmpeg',
+            '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', str(file_list),
+            '-c:v', 'libx264',
+            '-preset', 'slow',
+            '-crf', '18',
+            '-pix_fmt', 'yuv420p',
+            '-movflags', '+faststart',
+            str(output_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            error_msg = stderr.decode(errors='replace')[-500:] if stderr else "ffmpeg error"
+            raise RuntimeError(f"Video generation failed: {error_msg}")
+
+        logger.info(f"Video generated for camera {camera_id} on {target_date}: {output_path}")
+        return output_path, temp_dir

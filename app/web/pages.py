@@ -1,3 +1,9 @@
+"""FastAPI router serving server-rendered Jinja2 web pages.
+
+Renders the dashboard, report, and cameras management pages backed by
+Jinja2 templates.
+"""
+
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
@@ -18,6 +24,15 @@ async def dashboard(
     request: Request,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """Render the dashboard page with camera snapshot overview.
+
+    \f
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An HTMLResponse rendering dashboard.html with camera data.
+    """
     data = await service.get_dashboard_data()
     logger.debug(f"Rendering dashboard with {len(data)} cameras")
     return templates.TemplateResponse(
@@ -27,6 +42,15 @@ async def dashboard(
 
 @router.get("/report", response_class=HTMLResponse)
 async def report_page(request: Request):
+    """Render the report selection page.
+
+    \f
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An HTMLResponse rendering report.html.
+    """
     logger.debug("Rendering report page")
     return templates.TemplateResponse(
         request, "report.html",
@@ -38,6 +62,15 @@ async def cameras_page(
     request: Request,
     service: CameraService = Depends(get_camera_service),
 ):
+    """Render the cameras management page.
+
+    \f
+    Args:
+        request: The incoming HTTP request.
+
+    Returns:
+        An HTMLResponse rendering cameras.html with the camera list.
+    """
     cameras = await service.list_cameras()
     logger.debug(f"Rendering cameras page with {len(cameras)} cameras")
     return templates.TemplateResponse(
