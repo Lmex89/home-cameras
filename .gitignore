@@ -1,0 +1,16 @@
+cameras.yaml
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+data/
+*.db
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/

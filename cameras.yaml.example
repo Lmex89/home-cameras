@@ -1,0 +1,18 @@
+cameras:
+  - name: "Example Camera 1"
+    host: "192.168.1.100"
+    port: 80
+    username: "admin"
+    password: "your_password_here"
+    profile_token: null
+    interval_minutes: 15
+    enabled: true
+
+  - name: "Example Camera 2"
+    host: "192.168.1.101"
+    port: 8899
+    username: "admin"
+    password: "your_password_here"
+    profile_token: null
+    interval_minutes: 30
+    enabled: true

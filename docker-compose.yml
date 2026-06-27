@@ -1,0 +1,16 @@
+services:
+  camera-monitor:
+    build: .
+    container_name: camera-monitor
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./data:/app/data
+      - ./cameras.yaml:/app/cameras.yaml:ro
+    environment:
+      - APP_NAME=Camera Monitor
+      - DEBUG=true
+      - HOST=0.0.0.0
+      - PORT=8000
+      - SNAPSHOT_RETENTION_DAYS=30
+    restart: unless-stopped

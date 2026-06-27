@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Camera Monitor{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-grid"></i> Dashboard</h2>
+
+<div id="dashboard-alerts"></div>
+
+<div class="row g-4" id="camera-grid">
+    {% for cam in cameras %}
+    <div class="col-12 col-md-6 col-xl-4" data-camera-id="{{ cam.id }}">
+        <div class="card camera-card h-100 {% if not cam.enabled %}opacity-50{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="fw-bold">
+                    <i class="bi bi-camera{% if not cam.enabled %}-off{% endif %} me-2"></i>
+                    {{ cam.name }}
+                </span>
+                <span class="badge {% if cam.last_snapshot %}bg-success{% else %}bg-secondary{% endif %}">
+                    {% if cam.last_snapshot %}Online{% else %}Sin datos{% endif %}
+                </span>
+            </div>
+            <div class="card-body text-center">
+                {% if cam.last_snapshot %}
+                <a href="#" class="snapshot-link" data-bs-toggle="modal" data-bs-target="#snapshotModal"
+                   data-snapshot-id="{{ cam.last_snapshot.id }}">
+                    <img src="/api/snapshots/image/{{ cam.last_snapshot.id }}"
+                         class="img-fluid rounded snapshot-thumb"
+                         alt="Última captura {{ cam.name }}"
+                         loading="lazy">
+                </a>
+                <small class="text-muted d-block mt-2">
+                    <i class="bi bi-clock"></i> {{ cam.last_snapshot.captured_at }}
+                </small>
+                {% else %}
+                <div class="no-snapshot py-5">
+                    <i class="bi bi-image text-muted" style="font-size: 4rem;"></i>
+                    <p class="text-muted mt-2">Sin capturas aún</p>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <small class="text-muted">
+                    <i class="bi bi-repeat"></i> Cada {{ cam.interval_minutes }}min
+                    <br>
+                    <i class="bi bi-hdd-network"></i> {{ cam.host }}:{{ cam.port }}
+                </small>
+                <button class="btn btn-sm btn-outline-primary btn-force-snapshot"
+                        data-camera-id="{{ cam.id }}"
+                        title="Forzar captura">
+                    <i class="bi bi-camera"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="modal fade" id="snapshotModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">Captura</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="snapshotModalImage" src="" class="img-fluid" alt="Captura">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
