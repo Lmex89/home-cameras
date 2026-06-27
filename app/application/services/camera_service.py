@@ -32,6 +32,7 @@ class CameraService:
             username=data.username,
             password=data.password,
             profile_token=data.profile_token,
+            snapshot_url=data.snapshot_url,
             interval_minutes=data.interval_minutes,
             enabled=data.enabled,
         )

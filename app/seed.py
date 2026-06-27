@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
+from app.core.config import settings
 from app.core.database import session_factory
 from app.core.unit_of_work import UnitOfWork
 from app.domain.models import Camera
@@ -35,7 +36,8 @@ async def seed_from_yaml(yaml_path: Path) -> bool:
                 username=raw.get("username", ""),
                 password=raw.get("password", ""),
                 profile_token=raw.get("profile_token"),
-                interval_minutes=raw.get("interval_minutes", 15),
+                snapshot_url=raw.get("snapshot_url"),
+                interval_minutes=raw.get("interval_minutes", settings.default_interval_minutes),
                 enabled=raw.get("enabled", True),
             )
             await uow.cameras.add(camera)

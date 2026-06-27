@@ -45,6 +45,7 @@
                             data-port="{{ cam.port }}"
                             data-username="{{ cam.username }}"
                             data-interval="{{ cam.interval_minutes }}"
+                            data-snapshot-url="{{ cam.snapshot_url or '' }}"
                             data-enabled="{{ cam.enabled|lower }}">
                         <i class="bi bi-pencil"></i>
                     </button>
@@ -97,6 +98,11 @@
                                 <label class="form-check-label">Activa</label>
                             </div>
                         </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">URL directa de snapshot (opcional)</label>
+                        <input type="text" class="form-control" id="formSnapshotUrl" placeholder="http://ip/cgi-bin/snapshot.cgi">
+                        <small class="text-muted">Si la cámara no soporta ONVIF GetSnapshotUri</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Usuario ONVIF</label>

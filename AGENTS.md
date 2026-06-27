@@ -3,8 +3,8 @@
 ## Quick start
 
 ```bash
-uvicorn app.main:app --reload          # dev server
-docker compose up --build              # containerized
+uvicorn app.main:app --reload --port 8004  # dev server
+docker compose up --build                  # containerized
 ```
 
 ## Architecture
@@ -30,24 +30,25 @@ DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWo
 | Step | What happens |
 |---|---|
 | Startup | `lifespan` → init DB from `sql/schema.sql` → seed from `cameras.yaml` → start APScheduler |
-| Snapshots | `scheduler` calls `capture_job` → `ONVIFCameraClient.get_snapshot_uri()` → `httpx` fetches JPEG → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
+| Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile) → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
 | Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db` and `snapshots/`. |
 
 ## Config
 
 Env vars (via `pydantic-settings`, reads `.env`):
 
-- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `SNAPSHOT_RETENTION_DAYS`
+- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `SNAPSHOT_RETENTION_DAYS`, `DEFAULT_INTERVAL_MINUTES`
 
 ## Docker
 
-Multi-stage Alpine build. `docker-compose.yml` mounts `data/` and `cameras.yaml`. App user is `appuser` (UID not fixed).
+Multi-stage Alpine build. Includes `ffmpeg` for RTSP snapshot fallback. `docker-compose.yml` mounts `data/` and `cameras.yaml`. App user is `appuser` (UID not fixed).
 
 ## Dependencies
 
 - FastAPI, uvicorn, SQLAlchemy (async), aiosqlite, Jinja2
 - onvif-python, httpx (for snapshot fetch)
 - APScheduler (async), PyYAML, pydantic-settings
+- ffmpeg (RTSP frame grab fallback)
 
 ## Mandatory: SOLID principles
 

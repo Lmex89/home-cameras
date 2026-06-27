@@ -11,7 +11,8 @@ class CameraCreate(BaseModel):
     username: str = ""
     password: str = ""
     profile_token: str | None = None
-    interval_minutes: int = Field(default=15, ge=1)
+    snapshot_url: str | None = None
+    interval_minutes: int = Field(default=1, ge=1)
     enabled: bool = True
 
 
@@ -22,6 +23,7 @@ class CameraUpdate(BaseModel):
     username: str | None = None
     password: str | None = None
     profile_token: str | None = None
+    snapshot_url: str | None = None
     interval_minutes: int | None = Field(default=None, ge=1)
     enabled: bool | None = None
 
@@ -35,6 +37,7 @@ class CameraRead(BaseModel):
     port: int
     username: str
     profile_token: str | None
+    snapshot_url: str | None
     interval_minutes: int
     enabled: bool
     created_at: datetime
