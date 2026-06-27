@@ -33,9 +33,7 @@ async def seed_from_yaml(yaml_path: Path) -> bool:
 
     async with UnitOfWork(session_factory) as uow:
         existing = await uow.cameras.get_all()
-        if existing:
-            logger.info("Database already has cameras, skipping seed")
-            return False
+        existing_by_name = {c.name: c for c in existing}
 
         with open(yaml_path) as f:
             data = yaml.safe_load(f)
@@ -46,19 +44,25 @@ async def seed_from_yaml(yaml_path: Path) -> bool:
             return False
 
         for raw in raw_cameras:
-            camera = Camera(
-                name=raw["name"],
-                host=raw["host"],
-                port=raw.get("port", 80),
-                username=raw.get("username", ""),
-                password=raw.get("password", ""),
-                profile_token=raw.get("profile_token"),
-                snapshot_url=raw.get("snapshot_url"),
-                interval_seconds=raw.get("interval_seconds", settings.default_interval_seconds),
-                enabled=raw.get("enabled", True),
-            )
-            await uow.cameras.add(camera)
-            logger.info(f"Seeded camera: {camera.name} ({camera.host})")
+            name = raw["name"]
+            values = {
+                "host": raw["host"],
+                "port": raw.get("port", 80),
+                "username": raw.get("username", ""),
+                "password": raw.get("password", ""),
+                "profile_token": raw.get("profile_token"),
+                "snapshot_url": raw.get("snapshot_url"),
+                "interval_seconds": raw.get("interval_seconds", settings.default_interval_seconds),
+                "enabled": raw.get("enabled", True),
+            }
+            if name in existing_by_name:
+                updated = await uow.cameras.update(existing_by_name[name].id, values)
+                if updated:
+                    logger.info(f"Updated camera: {updated.name} ({updated.host})")
+            else:
+                camera = Camera(name=name, **values)
+                await uow.cameras.add(camera)
+                logger.info(f"Seeded camera: {camera.name} ({camera.host})")
 
-    logger.info(f"Seed complete: {len(raw_cameras)} cameras loaded")
+    logger.info(f"Seed complete: {len(raw_cameras)} cameras synced from YAML")
     return True

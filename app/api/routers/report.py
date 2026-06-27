@@ -6,9 +6,10 @@ generate downloadable timelapse videos for a camera on a given date.
 
 import shutil
 from datetime import date
+from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from app.api.deps import get_snapshot_service
@@ -53,23 +54,21 @@ async def get_report(
 async def get_report_video(
     report_date: date,
     camera_id: int,
-    background_tasks: BackgroundTasks,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
-    """Generate and download a timelapse video for a camera on a date.
+    """Generate and stream a timelapse video for a camera on a date.
 
     \f
     Builds an MP4 timelapse from the camera's snapshots captured on the
-    given date. The temporary build directory is cleaned up via a
-    background task after the response completes.
+    given date. The temporary build directory is deleted immediately
+    after the stream finishes, so no video file is ever persisted on disk.
 
     Args:
         report_date: The date of the snapshots to compile.
         camera_id: The unique identifier of the camera.
-        background_tasks: FastAPI background task runner for cleanup.
 
     Returns:
-        A FileResponse streaming the generated MP4 video.
+        A StreamingResponse with the generated MP4 video.
 
     Raises:
         HTTPException: 404 when no snapshots exist for the camera/date.
@@ -83,12 +82,18 @@ async def get_report_video(
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    background_tasks.add_task(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
-
     filename = f"timelapse_camera_{camera_id}_{report_date.isoformat()}.mp4"
-    return FileResponse(
-        str(video_path),
+
+    def iter_video():
+        try:
+            with open(video_path, "rb") as f:
+                yield from f
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.info(f"Cleaned up temporary video directory: {temp_dir}")
+
+    return StreamingResponse(
+        iter_video(),
         media_type="video/mp4",
-        filename=filename,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
