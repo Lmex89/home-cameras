@@ -18,7 +18,8 @@ class Camera(Base):
     username: Mapped[str] = mapped_column(Text, nullable=False, default="")
     password: Mapped[str] = mapped_column(Text, nullable=False, default="")
     profile_token: Mapped[str | None] = mapped_column(Text, nullable=True)
-    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
+    snapshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()

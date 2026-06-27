@@ -1,5 +1,6 @@
 from loguru import logger
 from onvif import ONVIFClient
+from typing import Optional
 
 
 class ONVIFCameraClient:
@@ -42,6 +43,86 @@ class ONVIFCameraClient:
         except Exception as e:
             logger.error(f"Failed to get snapshot URI from {host}:{port} — {e}")
             return None, str(e)
+
+    def get_stream_uri(
+        self, host: str, port: int, username: str, password: str, profile_token: str
+    ) -> tuple[Optional[str], Optional[str]]:
+        logger.debug(f"Getting stream URI from {host}:{port} (profile: {profile_token})")
+        try:
+            client = ONVIFClient(host, port, username, password, timeout=15)
+            media = client.media()
+            result = media.GetStreamUri(
+                {'Stream': 'RTP-Unicast', 'Transport': {'Protocol': 'RTSP'}},
+                profile_token,
+            )
+            uri = str(result.Uri)
+            logger.debug(f"Stream URI resolved: {uri}")
+            return uri, None
+        except Exception as e:
+            logger.warning(f"Failed to get stream URI from {host}:{port} — {e}")
+            return None, str(e)
+
+    def get_jpeg_stream_uri(
+        self, host: str, port: int, username: str, password: str
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        logger.debug(f"Looking for JPEG stream on {host}:{port}")
+        try:
+            client = ONVIFClient(host, port, username, password, timeout=15)
+            media = client.media()
+            profiles = media.GetProfiles()
+            for p in profiles:
+                if p.VideoEncoderConfiguration and p.VideoEncoderConfiguration.Encoding == 'JPEG':
+                    uri, err = self.get_stream_uri(host, port, username, password, p.token)
+                    if uri:
+                        logger.info(f"Found JPEG stream: {uri} (profile: {p.token})")
+                        return uri, p.token, None
+            return None, None, "No JPEG stream profile found"
+        except Exception as e:
+            logger.warning(f"Failed to find JPEG stream on {host}:{port} — {e}")
+            return None, None, str(e)
+
+    def get_first_stream_uri(
+        self, host: str, port: int, username: str, password: str
+    ) -> tuple[Optional[str], Optional[str]]:
+        logger.debug(f"Getting first available stream URI from {host}:{port}")
+        try:
+            client = ONVIFClient(host, port, username, password, timeout=15)
+            media = client.media()
+            profiles = media.GetProfiles()
+            if not profiles:
+                return None, "No media profiles found"
+            uri, err = self.get_stream_uri(host, port, username, password, profiles[0].token)
+            if uri:
+                logger.info(f"First stream: {uri} (profile: {profiles[0].token})")
+            return uri, err
+        except Exception as e:
+            return None, str(e)
+
+    def get_best_stream_uri(
+        self, host: str, port: int, username: str, password: str
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        logger.debug(f"Finding best stream URI from {host}:{port}")
+        try:
+            client = ONVIFClient(host, port, username, password, timeout=15)
+            media = client.media()
+            profiles = media.GetProfiles()
+            if not profiles:
+                return None, None, "No media profiles found"
+
+            best = max(
+                profiles,
+                key=lambda p: (
+                    p.VideoEncoderConfiguration.Resolution.Width * p.VideoEncoderConfiguration.Resolution.Height
+                    if p.VideoEncoderConfiguration and p.VideoEncoderConfiguration.Resolution
+                    else 0
+                ),
+            )
+            uri, err = self.get_stream_uri(host, port, username, password, best.token)
+            if uri:
+                logger.info(f"Best stream: {uri} (profile: {best.token})")
+            return uri, best.token, err
+        except Exception as e:
+            return None, None, str(e)
 
     def build_auth_url(self, raw_uri: str, username: str, password: str) -> str:
         if not raw_uri:

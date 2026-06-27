@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8004
     snapshot_retention_days: int = 30
+    default_interval_minutes: int = 1
 
     @property
     def base_dir(self) -> Path:

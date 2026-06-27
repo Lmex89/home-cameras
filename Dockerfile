@@ -25,7 +25,8 @@ FROM python:3.12-alpine
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN adduser -D -s /sbin/nologin appuser
+RUN apk add --no-cache ffmpeg && \
+    adduser -D -s /sbin/nologin appuser
 
 WORKDIR /app
 

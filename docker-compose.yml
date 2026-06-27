@@ -13,4 +13,5 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - SNAPSHOT_RETENTION_DAYS=30
+      - DEFAULT_INTERVAL_MINUTES=1
     restart: unless-stopped

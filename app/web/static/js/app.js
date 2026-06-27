@@ -138,6 +138,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('formHost').value = cam.host;
             document.getElementById('formPort').value = cam.port;
             document.getElementById('formInterval').value = cam.interval_minutes;
+            document.getElementById('formSnapshotUrl').value = cam.snapshot_url || '';
             document.getElementById('formEnabled').checked = cam.enabled;
             document.getElementById('formUsername').value = cam.username;
             document.getElementById('formPassword').value = '';
@@ -154,7 +155,8 @@ document.addEventListener('DOMContentLoaded', function () {
         formTestResult.classList.add('d-none');
         document.getElementById('formEnabled').checked = true;
         document.getElementById('formPort').value = '80';
-        document.getElementById('formInterval').value = '15';
+        document.getElementById('formInterval').value = '1';
+        document.getElementById('formSnapshotUrl').value = '';
     }
 
     document.getElementById('btnNewCamera').addEventListener('click', resetForm);
@@ -216,7 +218,8 @@ document.addEventListener('DOMContentLoaded', function () {
             port: parseInt(document.getElementById('formPort').value) || 80,
             username: document.getElementById('formUsername').value,
             password: document.getElementById('formPassword').value,
-            interval_minutes: parseInt(document.getElementById('formInterval').value) || 15,
+            snapshot_url: document.getElementById('formSnapshotUrl').value || null,
+            interval_minutes: parseInt(document.getElementById('formInterval').value) || 1,
             enabled: document.getElementById('formEnabled').checked,
         };
 

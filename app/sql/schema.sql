@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS cameras (
     username TEXT NOT NULL DEFAULT '',
     password TEXT NOT NULL DEFAULT '',
     profile_token TEXT,
-    interval_minutes INTEGER NOT NULL DEFAULT 15,
+    interval_minutes INTEGER NOT NULL DEFAULT 1,
+    snapshot_url TEXT,
     enabled BOOLEAN NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

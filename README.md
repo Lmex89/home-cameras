@@ -5,22 +5,23 @@ ONVIF-compatible camera snapshot monitoring system. Periodically captures snapsh
 ## Features
 
 - **ONVIF auto-discovery** — connects to cameras via ONVIF protocol, fetches snapshot URIs
-- **Scheduled capture** — per-camera configurable interval via APScheduler
+- **Scheduled capture** — per-camera configurable interval via APScheduler (default 1 min)
+- **Triple fallback capture** — direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile)
 - **Web dashboard** — view last snapshot, status, and daily reports for all cameras
 - **YAML-based setup** — define cameras in `cameras.yaml`, seeded on startup
-- **Docker ready** — multi-stage Alpine build, single `docker compose up`
+- **Docker ready** — multi-stage Alpine build with ffmpeg, single `docker compose up`
 
 ## Quick start
 
 ```bash
 # Dev server
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8004
 
 # Or containerized
 docker compose up --build
 ```
 
-Open http://localhost:8000
+Open http://localhost:8004
 
 ## Configuration
 
@@ -33,6 +34,7 @@ Set via environment variables or `.env` file:
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | HTTP port |
 | `SNAPSHOT_RETENTION_DAYS` | `30` | Auto-delete snapshots older than this |
+| `DEFAULT_INTERVAL_MINUTES` | `1` | Default capture interval for new cameras |
 
 ## Cameras YAML
 
@@ -45,9 +47,20 @@ cameras:
     port: 80
     username: "admin"
     password: "cambio123"
-    interval_minutes: 15
+    interval_minutes: 1
     enabled: true
+    snapshot_url: "http://192.168.1.100/cgi-bin/snapshot.cgi"  # optional override
 ```
+
+## Snapshot capture fallback
+
+Each camera attempt uses the following strategy (first success wins):
+
+1. **Direct URL** — if `snapshot_url` is set on the camera, HTTP GET that URL with HTTP Basic Auth
+2. **ONVIF `GetSnapshotUri`** — standard ONVIF snapshot pull (most compatible)
+3. **RTSP+ffmpeg** — ONVIF `GetStreamUri` → ffmpeg frame grab (auto-selects highest-resolution profile)
+
+This means cameras that don't support `GetSnapshotUri` (e.g. cheap NVRs, older models) still work via RTSP.
 
 ## API
 
@@ -61,9 +74,9 @@ cameras:
 | `GET` | `/api/cameras/{id}` | Camera detail |
 | `PUT` | `/api/cameras/{id}` | Update camera |
 | `DELETE` | `/api/cameras/{id}` | Remove camera |
-| `POST` | `/api/cameras/{id}/test` | Test ONVIF connection |
-| `POST` | `/api/cameras/{id}/capture` | Force snapshot |
-| `GET` | `/api/snapshots/{id}` | Get snapshot |
+| `POST` | `/api/cameras/test` | Test ONVIF connection |
+| `POST` | `/api/cameras/{id}/snapshot` | Force snapshot |
+| `GET` | `/api/snapshots/{id}` | Get snapshot metadata |
 | `GET` | `/api/snapshots/{camera_id}/by-date` | Snapshots by camera + date |
 | `GET` | `/api/snapshots/image/{id}` | Snapshot JPEG file |
 | `GET` | `/api/report/{date}` | Daily report data |
