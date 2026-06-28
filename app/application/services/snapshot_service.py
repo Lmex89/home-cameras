@@ -371,11 +371,12 @@ class SnapshotService:
             if full_path.exists():
                 entries.append(full_path)
         logger.debug(f"generate_daily_video: image_files_found={len(entries)}/{total_snaps}")
+        duration = "0.4" if hour is not None else "0.5"
         with open(file_list, "w") as f:
             for i, path in enumerate(entries):
                 f.write(f"file '{path}'\n")
                 if i < len(entries) - 1:
-                    f.write("duration 0.4\n")
+                    f.write(f"duration {duration}\n")
 
         if file_list.stat().st_size == 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
