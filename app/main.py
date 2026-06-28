@@ -7,6 +7,7 @@ and mounts all routers and static assets.
 
 import os
 import sys
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -145,43 +146,45 @@ async def serve_manifest():
     from app.core.database import engine
 
     async with engine.connect() as conn:
+        rows = (await conn.exec_driver_sql(
+            "SELECT id, name, host, port, interval_seconds, enabled "
+            "FROM cameras WHERE enabled = 1 ORDER BY id"
+        )).mappings().all()
+
         cameras = []
-        for row in await conn.exec_driver_sql(
-            "SELECT id, name, host, port, interval_seconds, enabled FROM cameras WHERE enabled = 1 ORDER BY id"
-        ):
-            cam = dict(row._mapping)
-            last_row = await conn.exec_driver_sql(
+        for row in rows:
+            cam = dict(row)
+            last = (await conn.exec_driver_sql(
                 "SELECT image_path, captured_at, file_size FROM snapshots "
                 "WHERE camera_id = ? AND status = 'success' AND image_path != '' "
                 "ORDER BY captured_at DESC LIMIT 1",
-                [cam["id"]],
-            )
-            last = last_row.mappings().first()
+                (cam["id"],),
+            )).mappings().first()
             cam["last_snapshot"] = {
                 "path": last["image_path"],
-                "captured_at": last["captured_at"].isoformat() if hasattr(last["captured_at"], "isoformat") else str(last["captured_at"]),
+                "captured_at": last["captured_at"],
                 "file_size": last["file_size"],
             } if last else None
 
-            count_row = await conn.exec_driver_sql(
-                "SELECT COUNT(*) as cnt FROM snapshots WHERE camera_id = ? AND status = 'success'",
-                [cam["id"]],
-            )
-            cam["total_snapshots"] = count_row.mappings().first()["cnt"]
+            cnt = (await conn.exec_driver_sql(
+                "SELECT COUNT(*) as cnt FROM snapshots "
+                "WHERE camera_id = ? AND status = 'success'",
+                (cam["id"],),
+            )).mappings().first()["cnt"]
+            cam["total_snapshots"] = cnt
             cameras.append(cam)
 
         snapshots: dict[str, dict[str, list[dict]]] = {}
-        for row in await conn.exec_driver_sql(
+        snap_rows = (await conn.exec_driver_sql(
             "SELECT camera_id, image_path, captured_at, file_size FROM snapshots "
             "WHERE status = 'success' AND image_path != '' ORDER BY camera_id, captured_at"
-        ):
-            r = dict(row._mapping)
+        )).mappings().all()
+        for r in snap_rows:
             cam_id = str(r["camera_id"])
-            captured = r["captured_at"]
-            d = captured.isoformat()[:10] if hasattr(captured, "isoformat") else str(captured)[:10]
+            d = r["captured_at"][:10]
             snapshots.setdefault(cam_id, {}).setdefault(d, []).append({
                 "path": r["image_path"],
-                "captured_at": captured.isoformat() if hasattr(captured, "isoformat") else str(captured),
+                "captured_at": r["captured_at"],
                 "file_size": r["file_size"],
             })
 
