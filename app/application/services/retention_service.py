@@ -6,7 +6,6 @@ per-camera/per-day ZIP archives in ``data/archives/``. Once past the
 retention period the archives and database records are removed.
 """
 
-import shutil
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -64,12 +63,18 @@ class RetentionService:
         Snapshot rows are updated with an ``archive_path`` like
         ``snapshots/{camera_id}/{date}.zip::{filename}`` and the original
         JPG file is deleted from ``data/snapshots/``.
+
+        Args:
+            cutoff: Exclusive lower-bound timestamp; snapshots older than
+                this are zipped and their raw files deleted.
+
+        Returns:
+            The number of snapshots successfully archived.
         """
         snapshots = await self._uow.snapshots.get_old_unarchived(cutoff)
         if not snapshots:
             return 0
 
-        # Group by (camera_id, date string)
         groups: dict[tuple[int, str], list[Snapshot]] = {}
         for snap in snapshots:
             snap_date = snap.captured_at.strftime("%Y-%m-%d")
@@ -89,7 +94,6 @@ class RetentionService:
                     if not src.exists():
                         continue
                     arcname = src.name
-                    # Only add if not already in the zip (idempotent)
                     if arcname not in zf.namelist():
                         zf.write(src, arcname)
                     archive_ref = f"{zip_rel}::{arcname}"
@@ -105,15 +109,17 @@ class RetentionService:
 
         A ZIP file is only removed once *all* snapshots referencing it have
         been deleted (i.e. are also past the cutoff).
-        """
-        snapshots = await self._uow.snapshots.get_old_unarchived(cutoff)
-        if not snapshots:
-            # Also handle already-archived snapshots past retention
-            pass
 
+        Args:
+            cutoff: Exclusive lower-bound timestamp; snapshots older than
+                this are deleted from the database and their archive files
+                removed from disk.
+
+        Returns:
+            The number of database records deleted.
+        """
         deleted = await self._uow.snapshots.delete_older_than(cutoff)
 
-        # Clean up orphaned ZIP archives whose snapshots are all gone
         archives_base = settings.archives_dir / "snapshots"
         if archives_base.exists():
             for zip_path in archives_base.rglob("*.zip"):
@@ -135,6 +141,13 @@ class RetentionService:
         Videos are grouped by camera id (from filename) and date, then
         packed into ``data/archives/videos/{camera_id}/{date}.zip``. The
         original MP4 is deleted after archiving.
+
+        Args:
+            cutoff: Exclusive lower-bound timestamp; videos older than
+                this are zipped and the raw MP4 deleted.
+
+        Returns:
+            The number of videos archived.
         """
         videos_dir = settings.videos_dir
         if not videos_dir.exists():
@@ -171,7 +184,15 @@ class RetentionService:
         return archived
 
     async def _delete_expired_videos(self, cutoff: datetime) -> int:
-        """Delete video archive ZIPs and any stray MP4 files past retention."""
+        """Delete video archive ZIPs and any stray MP4 files past retention.
+
+        Args:
+            cutoff: Exclusive lower-bound timestamp; files older than
+                this are removed from disk.
+
+        Returns:
+            The number of files deleted.
+        """
         deleted = 0
         archives_base = settings.archives_dir / "videos"
         if archives_base.exists():

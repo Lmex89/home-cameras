@@ -7,7 +7,6 @@ snapshots for a selected date or hour bucket.
 import shutil
 import zipfile
 from datetime import date
-from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
