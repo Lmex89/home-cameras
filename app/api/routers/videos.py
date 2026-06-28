@@ -47,6 +47,9 @@ async def create_video(
         HTTPException: 400 on invalid input, 404 when the camera or
             snapshots are missing, 500 when ffmpeg fails.
     """
+    hour_label = f"hour {payload.hour:02d}" if payload.hour is not None else "all day"
+    logger.info(f"Video requested: camera={payload.camera_id} date={payload.date} {hour_label}")
+
     camera = await service._uow.cameras.get_by_id(payload.camera_id)
     if not camera:
         logger.warning(f"Video request: camera {payload.camera_id} not found")
@@ -57,10 +60,10 @@ async def create_video(
             payload.camera_id, payload.date, payload.hour
         )
     except ValueError as e:
-        logger.warning(f"Video request rejected: {e}")
+        logger.warning(f"Video request rejected: camera={payload.camera_id} reason={e}")
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
-        logger.exception(f"Video generation failed for camera {payload.camera_id}")
+        logger.exception(f"Video generation failed: camera={payload.camera_id}")
         raise HTTPException(status_code=500, detail=str(e))
 
     vdir = _videos_dir()
@@ -69,8 +72,9 @@ async def create_video(
     shutil.move(str(output_path), str(persistent))
     shutil.rmtree(temp_dir, ignore_errors=True)
 
-    logger.info(f"Video saved: {persistent}")
-    return VideoResponse(video_url=f"/api/videos/download/{persistent.name}")
+    url = f"/api/videos/download/{persistent.name}"
+    logger.info(f"Video saved: {persistent} url={url}")
+    return VideoResponse(video_url=url)
 
 
 @router.get("/download/{filename}")
@@ -89,6 +93,8 @@ async def download_video(filename: str):
     """
     path = _videos_dir() / filename
     if not path.exists():
-        logger.warning(f"Video download requested for missing file: {path}")
+        logger.warning(f"Video download: file not found {path}")
         raise HTTPException(status_code=404, detail="Video not found")
+    size_mb = path.stat().st_size / (1024 * 1024)
+    logger.info(f"Video download: {filename} size={size_mb:.1f}MB")
     return FileResponse(str(path), media_type="video/mp4", filename=filename)

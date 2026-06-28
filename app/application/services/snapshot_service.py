@@ -348,6 +348,8 @@ class SnapshotService:
         if hour is not None:
             snapshots = [s for s in snapshots if s.captured_at.hour == hour]
         snapshots.sort(key=lambda s: s.captured_at)
+        total_snaps = len(snapshots)
+        logger.debug(f"generate_daily_video: camera={camera_id} date={target_date} hour={hour} snapshots_found={total_snaps}")
         if not snapshots:
             label = f"hour {hour:02d}:00 of {target_date}" if hour is not None else str(target_date)
             raise ValueError(f"No snapshots for camera {camera_id} on {label}")
@@ -360,6 +362,7 @@ class SnapshotService:
             full_path = settings.snapshots_dir / snap.image_path
             if full_path.exists():
                 entries.append(full_path)
+        logger.debug(f"generate_daily_video: image_files_found={len(entries)}/{total_snaps}")
         with open(file_list, "w") as f:
             for i, path in enumerate(entries):
                 f.write(f"file '{path}'\n")
@@ -374,18 +377,16 @@ class SnapshotService:
         suffix = f"_h{hour:02d}" if hour is not None else ""
         output_path = temp_dir / f"timelapse_{camera_id}_{target_date.isoformat()}{suffix}.mp4"
 
-        proc = await asyncio.create_subprocess_exec(
-            'ffmpeg',
-            '-y',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', str(file_list),
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '28',
-            '-pix_fmt', 'yuv420p',
-            '-movflags', '+faststart',
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat', '-safe', '0', '-i', str(file_list),
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+            '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
             str(output_path),
+        ]
+        logger.debug(f"Running ffmpeg: {' '.join(cmd)}")
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -393,8 +394,10 @@ class SnapshotService:
         if proc.returncode != 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
             error_msg = stderr.decode(errors='replace')[-500:] if stderr else "ffmpeg error"
+            logger.error(f"ffmpeg failed: camera={camera_id} returncode={proc.returncode} stderr={error_msg}")
             raise RuntimeError(f"Video generation failed: {error_msg}")
 
+        size_mb = output_path.stat().st_size / (1024 * 1024)
         label = f"camera {camera_id} on {target_date}" + (f" hour {hour:02d}" if hour is not None else "")
-        logger.info(f"Video generated for {label}: {output_path}")
+        logger.info(f"Video generated for {label}: {output_path} size={size_mb:.1f}MB")
         return output_path, temp_dir
