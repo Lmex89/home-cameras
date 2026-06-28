@@ -5,7 +5,6 @@ snapshots for a selected date or hour bucket.
 """
 
 import shutil
-import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from app.api.deps import get_snapshot_service
 from app.application.services.snapshot_service import SnapshotService
 from app.core.config import settings
 from app.domain.schemas import VideoRequest, VideoResponse
+from app.infrastructure.archive import read_video_from_archive
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -101,18 +101,10 @@ async def download_video(filename: str):
         return FileResponse(str(path), media_type="video/mp4", filename=filename)
 
     # Fallback: try archive
-    # Filename format: timelapse_{camera_id}_{date}_h{hour}.mp4 or timelapse_{camera_id}_{date}.mp4
-    parts = Path(filename).stem.split("_")
-    if len(parts) >= 3:
-        cam_id = parts[1]
-        date_part = parts[2]
-        zip_path = settings.archives_dir / "videos" / cam_id / f"{date_part}.zip"
-        if zip_path.exists():
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                if filename in zf.namelist():
-                    data = zf.read(filename)
-                    logger.info(f"Video download: {filename} served from archive {zip_path}")
-                    return Response(content=data, media_type="video/mp4")
+    data = read_video_from_archive(filename)
+    if data is not None:
+        logger.info(f"Video download: {filename} served from archive")
+        return Response(content=data, media_type="video/mp4")
 
     logger.warning(f"Video download: file not found {path}")
     raise HTTPException(status_code=404, detail="Video not found")

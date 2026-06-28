@@ -5,7 +5,6 @@ for a camera, and stream snapshot image files (including from archived
 ZIP storage).
 """
 
-import zipfile
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,34 +15,9 @@ from app.api.deps import get_snapshot_service
 from app.application.services.snapshot_service import SnapshotService
 from app.core.config import settings
 from app.domain.schemas import SnapshotRead
+from app.infrastructure.archive import read_snapshot_from_archive
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
-
-
-def _read_from_archive(archive_ref: str) -> bytes:
-    """Extract a file from a ZIP archive given an archive reference.
-
-    The reference format is ``{rel_zip_path}::{filename}``, e.g.
-    ``snapshots/3/2025-06-15.zip::150322.jpg``.
-
-    Args:
-        archive_ref: Archive reference string stored in the snapshot row.
-
-    Returns:
-        The raw bytes of the extracted file.
-
-    Raises:
-        FileNotFoundError: When the archive ZIP or the file inside it
-            does not exist.
-    """
-    zip_rel, filename = archive_ref.split("::", 1)
-    zip_abs = settings.archives_dir / zip_rel
-    if not zip_abs.exists():
-        raise FileNotFoundError(f"Archive not found: {zip_abs}")
-    with zipfile.ZipFile(zip_abs, "r") as zf:
-        if filename not in zf.namelist():
-            raise FileNotFoundError(f"{filename} not found in {zip_abs}")
-        return zf.read(filename)
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotRead)
@@ -70,7 +44,7 @@ async def get_snapshot(
     return SnapshotRead.model_validate(snap)
 
 
-@router.get("/{camera_id}/by-date")
+@router.get("/{camera_id}/by-date", response_model=list[SnapshotRead])
 async def get_camera_snapshots(
     camera_id: int,
     snapshot_date: date,
@@ -121,7 +95,7 @@ async def get_snapshot_image(
     # Try serving from archive if the raw file was rotated away
     if snap.archive_path:
         try:
-            data = _read_from_archive(snap.archive_path)
+            data = read_snapshot_from_archive(snap.archive_path)
             logger.debug(f"Serving snapshot {snapshot_id} from archive {snap.archive_path}")
             return Response(content=data, media_type="image/jpeg")
         except FileNotFoundError:

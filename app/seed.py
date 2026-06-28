@@ -43,6 +43,7 @@ async def seed_from_yaml(yaml_path: Path) -> bool:
             logger.warning(f"No cameras defined in YAML at {yaml_path}")
             return False
 
+        yaml_names = {raw["name"] for raw in raw_cameras}
         for raw in raw_cameras:
             name = raw["name"]
             values = {
@@ -63,6 +64,11 @@ async def seed_from_yaml(yaml_path: Path) -> bool:
                 camera = Camera(name=name, **values)
                 await uow.cameras.add(camera)
                 logger.info(f"Seeded camera: {camera.name} ({camera.host})")
+
+        for name, cam in existing_by_name.items():
+            if name not in yaml_names:
+                await uow.cameras.delete(cam.id)
+                logger.info(f"Removed camera not in YAML: {name}")
 
     logger.info(f"Seed complete: {len(raw_cameras)} cameras synced from YAML")
     return True

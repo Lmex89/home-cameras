@@ -20,6 +20,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
 from app.domain.models import Camera, Snapshot
+from app.domain.schemas import DailyReport
 from app.infrastructure.onvif import ONVIFCameraClient
 
 
@@ -261,30 +262,36 @@ class SnapshotService:
         logger.info(f"Force capture triggered for camera {camera.name} ({camera.host})")
         return await self.capture(camera)
 
-    async def get_daily_report(self, target_date: date):
-        """Group all snapshots for a date by camera.
+    async def get_daily_report(self, target_date: date) -> DailyReport:
+        """Build a validated daily report with per-camera snapshot lists.
 
         Args:
             target_date: The date to query (in project timezone).
 
         Returns:
-            Dict keyed by camera_id with camera name and snapshot list,
-            or empty dict if no snapshots exist.
+            A DailyReport schema with validated camera and snapshot data.
         """
+        from app.domain.schemas import DailyReport, DailyReportCamera, SnapshotRead
+
         all_snapshots = await self._uow.snapshots.get_by_date(target_date)
         logger.debug(f"Daily report for {target_date}: {len(all_snapshots)} snapshots total")
         grouped: dict[int, list[Snapshot]] = defaultdict(list)
         for snap in all_snapshots:
             grouped[snap.camera_id].append(snap)
-        cameras_snapshots = {}
+        cameras_list = []
         for camera_id, snap_list in grouped.items():
             cam = await self._uow.cameras.get_by_id(camera_id)
             name = cam.name if cam else f"Camera {camera_id}"
-            cameras_snapshots[camera_id] = {"name": name, "snapshots": snap_list}
-        return {
-            "date": target_date.isoformat(),
-            "cameras": cameras_snapshots,
-        }
+            snapshots = [SnapshotRead.model_validate(s) for s in snap_list]
+            cameras_list.append(
+                DailyReportCamera(
+                    camera_id=camera_id,
+                    camera_name=name,
+                    total_snapshots=len(snapshots),
+                    snapshots=snapshots,
+                )
+            )
+        return DailyReport(date=target_date.isoformat(), cameras=cameras_list)
 
     async def get_camera_snapshots(
         self, camera_id: int, target_date: date
@@ -302,14 +309,14 @@ class SnapshotService:
         logger.debug(f"Camera {camera_id} snapshots on {target_date}: {len(snapshots)}")
         return snapshots
 
-    async def get_dashboard_data(self):
+    async def get_dashboard_data(self) -> list[dict]:
         """Build dashboard payload of cameras and their last snapshot.
 
         Returns:
-            List of dicts merging validated camera data with its
-            ``last_snapshot`` (or ``None`` when none exists).
+            List of serialized camera dicts each with a
+            ``last_snapshot`` key (or ``None`` when none exists).
         """
-        from app.domain.schemas import CameraRead, SnapshotRead
+        from app.domain.schemas import CameraWithLastSnapshot, CameraRead, SnapshotRead
         cameras = await self._uow.cameras.get_all()
         camera_ids = [c.id for c in cameras]
         last_snapshots = await self._uow.snapshots.get_last_for_all_cameras(camera_ids)
@@ -318,10 +325,11 @@ class SnapshotService:
             cam_read = CameraRead.model_validate(cam)
             last_snap = last_snapshots.get(cam.id)
             snap_read = SnapshotRead.model_validate(last_snap) if last_snap else None
-            result.append({
+            merged = CameraWithLastSnapshot(
                 **cam_read.model_dump(),
-                "last_snapshot": snap_read.model_dump() if snap_read else None,
-            })
+                last_snapshot=snap_read,
+            )
+            result.append(merged.model_dump())
         return result
 
     async def generate_daily_video(
