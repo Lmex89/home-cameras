@@ -375,7 +375,7 @@ class SnapshotService:
             for i, path in enumerate(entries):
                 f.write(f"file '{path}'\n")
                 if i < len(entries) - 1:
-                    f.write("duration 0.375\n")
+                    f.write("duration 0.4\n")
 
         if file_list.stat().st_size == 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
