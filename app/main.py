@@ -20,6 +20,8 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.core.config import settings
+from app.core.unit_of_work import UnitOfWork
+from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead
 
 os.environ["TZ"] = settings.timezone
 try:
@@ -133,63 +135,58 @@ async def serve_dashboard_index():
 
 @app.get("/data/manifest.json")
 async def serve_manifest():
-    """Serve a live-generated dashboard manifest from the database.
+    """Serve a live dashboard manifest generated from the database.
 
-    \f
-    Queries cameras and snapshots on each request so the dashboard
-    always shows fresh data without a manual export step.
+    Queries all enabled cameras and their successful snapshots on
+    every request so the dashboard always shows fresh data without
+    requiring a manual export step.
 
     Returns:
-        JSON manifest with cameras, last snapshots, and per-date
-        snapshot lists.
+        Dict with ``generated_at`` timestamp, ``cameras`` list (each
+        including ``last_snapshot`` and ``total_snapshots``), and
+        ``snapshots`` dict keyed by camera_id → date → snapshot list.
     """
-    from app.core.database import engine
+    from app.core.database import session_factory as _sf
 
-    async with engine.connect() as conn:
-        rows = (await conn.exec_driver_sql(
-            "SELECT id, name, host, port, interval_seconds, enabled "
-            "FROM cameras WHERE enabled = 1 ORDER BY id"
-        )).mappings().all()
+    async with UnitOfWork(_sf) as uow:
+        cameras = await uow.cameras.get_enabled()
+        camera_ids = [c.id for c in cameras]
 
-        cameras = []
-        for row in rows:
-            cam = dict(row)
-            last = (await conn.exec_driver_sql(
-                "SELECT image_path, captured_at, file_size FROM snapshots "
-                "WHERE camera_id = ? AND status = 'success' AND image_path != '' "
-                "ORDER BY captured_at DESC LIMIT 1",
-                (cam["id"],),
-            )).mappings().first()
-            cam["last_snapshot"] = {
-                "path": last["image_path"],
-                "captured_at": last["captured_at"],
-                "file_size": last["file_size"],
-            } if last else None
+        last_snapshots = await uow.snapshots.get_last_for_all_cameras(camera_ids)
+        all_snaps = await uow.snapshots.get_all_successful_with_images()
 
-            cnt = (await conn.exec_driver_sql(
-                "SELECT COUNT(*) as cnt FROM snapshots "
-                "WHERE camera_id = ? AND status = 'success'",
-                (cam["id"],),
-            )).mappings().first()["cnt"]
-            cam["total_snapshots"] = cnt
-            cameras.append(cam)
+        # Build total_snapshots count per camera from the full list
+        total_by_cam: dict[int, int] = {}
+        for snap in all_snaps:
+            total_by_cam[snap.camera_id] = total_by_cam.get(snap.camera_id, 0) + 1
+
+        cameras_data = []
+        for cam in cameras:
+            cam_schema = CameraWithLastSnapshot(
+                **CameraRead.model_validate(cam).model_dump(),
+                last_snapshot=SnapshotRead.model_validate(last_snapshots[cam.id])
+                if last_snapshots.get(cam.id)
+                else None,
+                total_snapshots=total_by_cam.get(cam.id, 0),
+            )
+            cameras_data.append(cam_schema.model_dump())
 
         snapshots: dict[str, dict[str, list[dict]]] = {}
-        snap_rows = (await conn.exec_driver_sql(
-            "SELECT camera_id, image_path, captured_at, file_size FROM snapshots "
-            "WHERE status = 'success' AND image_path != '' ORDER BY camera_id, captured_at"
-        )).mappings().all()
-        for r in snap_rows:
-            cam_id = str(r["camera_id"])
-            d = r["captured_at"][:10]
-            snapshots.setdefault(cam_id, {}).setdefault(d, []).append({
-                "path": r["image_path"],
-                "captured_at": r["captured_at"],
-                "file_size": r["file_size"],
-            })
+        for snap in all_snaps:
+            cam_id = str(snap.camera_id)
+            d = snap.captured_at.strftime("%Y-%m-%d")
+            snap_dict = SnapshotRead.model_validate(snap).model_dump(
+                include={"image_path", "captured_at", "file_size"}
+            )
+            snapshots.setdefault(cam_id, {}).setdefault(d, []).append(snap_dict)
+
+        logger.info(
+            f"Manifest generated: {len(cameras_data)} cameras, "
+            f"{sum(total_by_cam.values())} snapshots"
+        )
 
         return {
             "generated_at": datetime.now().isoformat(),
-            "cameras": cameras,
+            "cameras": cameras_data,
             "snapshots": snapshots,
         }

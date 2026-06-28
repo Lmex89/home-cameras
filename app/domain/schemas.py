@@ -109,6 +109,7 @@ class CameraWithLastSnapshot(CameraRead):
     """Serialize a camera together with its most recent snapshot."""
 
     last_snapshot: SnapshotRead | None = None
+    total_snapshots: int = 0
 
 
 class VideoRequest(BaseModel):

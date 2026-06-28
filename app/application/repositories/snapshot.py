@@ -141,6 +141,25 @@ class SnapshotRepository:
         self._session.add(snapshot)
         await self._session.flush()
 
+    async def get_all_successful_with_images(self) -> list[Snapshot]:
+        """Get all successful snapshots that have an image file saved.
+
+        Used by the live manifest endpoint to build the per-date
+        snapshot index without a separate export step.
+
+        Returns:
+            Snapshots ordered by camera_id then captured_at timestamp.
+        """
+        result = await self._session.execute(
+            select(Snapshot)
+            .where(
+                Snapshot.status == "success",
+                Snapshot.image_path != "",
+            )
+            .order_by(Snapshot.camera_id, Snapshot.captured_at)
+        )
+        return list(result.scalars().all())
+
     async def count_by_camera_and_date(
         self, camera_id: int, target_date: date
     ) -> int:
