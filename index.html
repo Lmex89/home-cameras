@@ -624,7 +624,7 @@ function closeSheet() {
 function getSnapshotHour(snap) {
   try {
     const raw = snap.captured_at;
-    const d = new Date(raw.replace(' ', 'T') + (raw.includes('T') ? '' : 'T'));
+    const d = new Date(raw.replace(' ', 'T'));
     if (isNaN(d.getTime())) return '00';
     return String(d.getHours()).padStart(2, '0');
   } catch { return '00'; }
@@ -770,7 +770,7 @@ function nextLightbox() {
 function formatTime(iso) {
   if (!iso) return '—';
   try {
-    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T'));
+    const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
     return d.toLocaleString(undefined, {
       year: 'numeric', month: 'short', day: 'numeric',
@@ -782,7 +782,7 @@ function formatTime(iso) {
 function formatTimeShort(iso) {
   if (!iso) return '—';
   try {
-    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T'));
+    const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
     return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   } catch { return iso; }
@@ -791,7 +791,7 @@ function formatTimeShort(iso) {
 function timeAgo(iso) {
   if (!iso) return '—';
   try {
-    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T'));
+    const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
     const diff = Math.floor((Date.now() - d.getTime()) / 1000);
     if (diff < 60) return `${diff}s ago`;
