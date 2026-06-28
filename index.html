@@ -380,6 +380,7 @@ let lightboxIndex = 0;
 let currentPage = 1;
 let pageSize = 10;
 let groupByHour = true;
+let selectedHour = null;
 
 // ── Load manifest ──────────────────────────────────────────────────
 async function loadManifest() {
@@ -536,9 +537,12 @@ function renderSnapshots(camId, dateStr) {
   const statsRow = document.getElementById('statsRow');
   const cam = manifest.cameras.find(c => c.id === camId);
 
+  // Read selected hour from dropdown
+  selectedHour = document.getElementById('hourSelect').value || null;
+
   // Update total count in stats
   const totalForDate = cam._dateCounts[dateStr] || 0;
-  const existingStats = statsRow.querySelectorAll('.stat-box');
+  let existingStats = statsRow.querySelectorAll('.stat-box');
   if (existingStats.length > 3) {
     existingStats[3].remove();
   }
@@ -550,17 +554,34 @@ function renderSnapshots(camId, dateStr) {
   }
 
   const sid = String(camId);
-  const allSnaps = (manifest.snapshots[sid] && manifest.snapshots[sid][dateStr]) || [];
+  let allSnaps = (manifest.snapshots[sid] && manifest.snapshots[sid][dateStr]) || [];
+
+  // Filter by selected hour
+  if (selectedHour) {
+    allSnaps = allSnaps.filter(s => getSnapshotHour(s) === selectedHour);
+  }
 
   grid.innerHTML = '';
   if (allSnaps.length === 0) {
-    grid.innerHTML = `<div class="snap-empty">No snapshots for this date</div>`;
+    grid.innerHTML = `<div class="snap-empty">No snapshots for this date${selectedHour ? ` at hour ${selectedHour}` : ''}</div>`;
     updatePagination(0, 1);
     return;
   }
 
   // Sort by time ascending
   allSnaps.sort((a, b) => a.captured_at.localeCompare(b.captured_at));
+
+  // Add hour stat
+  existingStats = statsRow.querySelectorAll('.stat-box');
+  if (existingStats.length > 4) {
+    existingStats[4].remove();
+  }
+  if (selectedHour) {
+    const el = document.createElement('div');
+    el.className = 'stat-box';
+    el.innerHTML = `Hour <strong>${selectedHour}:00</strong>: <strong>${allSnaps.length}</strong> snapshots`;
+    statsRow.appendChild(el);
+  }
 
   const totalPages = Math.max(1, Math.ceil(allSnaps.length / pageSize));
   if (currentPage > totalPages) currentPage = totalPages;
@@ -733,6 +754,11 @@ document.getElementById('prevPage').addEventListener('click', () => {
 
 document.getElementById('nextPage').addEventListener('click', () => {
   currentPage++;
+  if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+});
+
+document.getElementById('hourSelect').addEventListener('change', (e) => {
+  currentPage = 1;
   if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
 });
 
