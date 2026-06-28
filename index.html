@@ -905,7 +905,7 @@ function populateHourSelect() {
   const sel = document.getElementById('hourSelect');
   for (let h = 0; h < 24; h++) {
     const opt = document.createElement('option');
-    opt.value = h;
+    opt.value = String(h).padStart(2, '0');
     opt.textContent = `${String(h).padStart(2, '0')}:00`;
     sel.appendChild(opt);
   }
