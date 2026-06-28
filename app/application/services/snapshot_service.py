@@ -324,41 +324,55 @@ class SnapshotService:
             })
         return result
 
-    async def generate_daily_video(self, camera_id: int, target_date: date) -> tuple[Path, Path]:
+    async def generate_daily_video(
+        self, camera_id: int, target_date: date, hour: int | None = None
+    ) -> tuple[Path, Path]:
         """Render a timelapse MP4 from a camera's snapshots for a date.
 
         Args:
             camera_id: Primary key of the camera.
             target_date: Date of snapshots to include.
+            hour: Optional hour (0-23) to filter snapshots to a single
+                hour bucket. When omitted, all snapshots for the date are
+                included.
 
         Returns:
             Tuple of (output video path, temp working directory).
 
         Raises:
             ValueError: When no snapshots or image files exist for the
-                given camera and date.
+                given camera, date, and optional hour.
             RuntimeError: When ffmpeg fails to produce the video.
         """
         snapshots = await self._uow.snapshots.get_by_camera_and_date(camera_id, target_date)
+        if hour is not None:
+            snapshots = [s for s in snapshots if s.captured_at.hour == hour]
         snapshots.sort(key=lambda s: s.captured_at)
         if not snapshots:
-            raise ValueError(f"No snapshots for camera {camera_id} on {target_date}")
+            label = f"hour {hour:02d}:00 of {target_date}" if hour is not None else str(target_date)
+            raise ValueError(f"No snapshots for camera {camera_id} on {label}")
 
         temp_dir = Path(tempfile.mkdtemp(prefix=f"tl_{camera_id}_"))
         file_list = temp_dir / "files.txt"
 
+        entries = []
+        for snap in snapshots:
+            full_path = settings.snapshots_dir / snap.image_path
+            if full_path.exists():
+                entries.append(full_path)
         with open(file_list, "w") as f:
-            for snap in snapshots:
-                full_path = settings.snapshots_dir / snap.image_path
-                if full_path.exists():
-                    f.write(f"file '{full_path}'\n")
+            for i, path in enumerate(entries):
+                f.write(f"file '{path}'\n")
+                if i < len(entries) - 1:
                     f.write("duration 0.1\n")
 
         if file_list.stat().st_size == 0:
             shutil.rmtree(temp_dir, ignore_errors=True)
-            raise ValueError(f"No image files found for camera {camera_id} on {target_date}")
+            label = f"hour {hour:02d}:00 of {target_date}" if hour is not None else str(target_date)
+            raise ValueError(f"No image files found for camera {camera_id} on {label}")
 
-        output_path = temp_dir / f"timelapse_{camera_id}_{target_date.isoformat()}.mp4"
+        suffix = f"_h{hour:02d}" if hour is not None else ""
+        output_path = temp_dir / f"timelapse_{camera_id}_{target_date.isoformat()}{suffix}.mp4"
 
         proc = await asyncio.create_subprocess_exec(
             'ffmpeg',
@@ -367,8 +381,8 @@ class SnapshotService:
             '-safe', '0',
             '-i', str(file_list),
             '-c:v', 'libx264',
-            '-preset', 'slow',
-            '-crf', '18',
+            '-preset', 'ultrafast',
+            '-crf', '28',
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             str(output_path),
@@ -381,5 +395,6 @@ class SnapshotService:
             error_msg = stderr.decode(errors='replace')[-500:] if stderr else "ffmpeg error"
             raise RuntimeError(f"Video generation failed: {error_msg}")
 
-        logger.info(f"Video generated for camera {camera_id} on {target_date}: {output_path}")
+        label = f"camera {camera_id} on {target_date}" + (f" hour {hour:02d}" if hour is not None else "")
+        logger.info(f"Video generated for {label}: {output_path}")
         return output_path, temp_dir

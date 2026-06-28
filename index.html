@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3347;
+    --text: #e1e4ed;
+    --text2: #8b90a5;
+    --accent: #4f8cff;
+    --accent2: #3a6fd8;
+    --green: #34d399;
+    --red: #f87171;
+    --radius: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,.4);
+  }
+  html { font-size: 15px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  a { color: var(--accent); text-decoration: none; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.25rem 2rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; }
+  .header .sub {
+    font-size: .8rem; color: var(--text2);
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .header .sub .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); margin-right: 4px;
+  }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+  .nav-bar {
+    display: flex; gap: .5rem; margin-bottom: 1.5rem; flex-wrap: wrap;
+  }
+  .nav-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text2);
+    padding: .5rem 1.2rem; border-radius: 8px; cursor: pointer;
+    font-size: .85rem; transition: all .15s;
+  }
+  .nav-btn:hover { border-color: var(--accent); color: var(--text); }
+  .nav-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .cameras-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.25rem;
+  }
+  .camera-card {
+    background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--border);
+    overflow: hidden; cursor: pointer;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .camera-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .camera-card {
+    position: relative;
+  }
+  .camera-card .thumb {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover;
+    background: var(--surface2);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text2); font-size: .85rem;
+  }
+  .camera-card .thumb-wrap {
+    position: relative;
+  }
+  .camera-card .last-overlay {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,.85));
+    padding: 2rem .75rem .4rem .75rem;
+    font-size: .75rem; color: #fff;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .camera-card .last-overlay .ago {
+    font-weight: 600; color: var(--green);
+  }
+  .camera-card .info { padding: 1rem 1.1rem; }
+  .camera-card .info .name { font-weight: 600; font-size: 1rem; }
+  .camera-card .info .meta {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: .4rem; font-size: .8rem; color: var(--text2);
+  }
+  .camera-card .info .meta .count { color: var(--accent); font-weight: 500; }
+  .camera-card .info .meta .time { }
+  .camera-card .badge {
+    display: inline-block; font-size: .7rem; padding: .15rem .55rem;
+    border-radius: 99px; font-weight: 600;
+  }
+  .badge-on { background: rgba(52,211,153,.15); color: var(--green); }
+  .badge-off { background: rgba(248,113,113,.15); color: var(--red); }
+
+  .detail-panel {
+    display: none;
+    background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--border); padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .detail-panel.visible { display: block; }
+  .detail-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.25rem; flex-wrap: wrap; gap: .75rem;
+  }
+  .detail-header h2 { font-size: 1.15rem; }
+  .detail-header .close-btn {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text2); padding: .35rem .9rem; border-radius: 6px;
+    cursor: pointer; font-size: .8rem;
+  }
+  .detail-header .close-btn:hover { border-color: var(--red); color: var(--red); }
+  .date-picker {
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .date-picker label { font-size: .85rem; color: var(--text2); }
+  .date-picker input[type="date"] {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: .4rem .7rem; border-radius: 6px;
+    font-size: .85rem;
+  }
+  .date-picker input[type="date"]:focus { outline: none; border-color: var(--accent); }
+
+  .stats-row {
+    display: flex; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+  }
+  .stat-box {
+    background: var(--surface2); padding: .6rem 1.1rem; border-radius: 8px;
+    font-size: .8rem; color: var(--text2);
+  }
+  .stat-box strong { color: var(--text); font-weight: 600; }
+
+  .list-controls {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;
+  }
+  .group-toggle {
+    display: flex; align-items: center; gap: .5rem; cursor: pointer;
+    font-size: .85rem; color: var(--text2); user-select: none;
+  }
+  .group-toggle input[type="checkbox"] {
+    width: 1rem; height: 1rem; accent-color: var(--accent); cursor: pointer;
+  }
+  .page-size-select {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: .4rem .7rem; border-radius: 6px; font-size: .85rem;
+  }
+  .pagination {
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .pagination button {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: .4rem .8rem; border-radius: 6px; cursor: pointer; font-size: .85rem;
+  }
+  .pagination button:disabled {
+    opacity: .4; cursor: not-allowed;
+  }
+  .pagination .page-info {
+    font-size: .85rem; color: var(--text2); min-width: 6rem; text-align: center;
+  }
+
+  .hour-group {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: .6rem;
+    margin: .75rem 0 .35rem 0; padding-bottom: .35rem;
+    border-bottom: 1px solid var(--border);
+    font-size: .85rem; font-weight: 600; color: var(--accent);
+  }
+  .hour-group:first-child { margin-top: 0; }
+  .hour-count {
+    font-size: .75rem; font-weight: 500; color: var(--text2);
+    background: var(--surface2); padding: .15rem .5rem; border-radius: 99px;
+  }
+  .video-btn {
+    margin-left: auto;
+    background: var(--accent); border: none; color: #fff;
+    padding: .2rem .6rem; border-radius: 6px; cursor: pointer;
+    font-size: .75rem; font-weight: 500;
+  }
+  .video-btn:hover { background: var(--accent2); }
+  .video-btn:disabled { opacity: .5; cursor: wait; }
+  .video-day-btn {
+    background: var(--green); border: none; color: #0f1117;
+    padding: .35rem .8rem; border-radius: 6px; cursor: pointer;
+    font-size: .85rem; font-weight: 600;
+  }
+  .video-day-btn:hover { filter: brightness(1.1); }
+  .video-day-btn:disabled { opacity: .5; cursor: wait; }
+
+  .snapshots-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: .75rem;
+  }
+  .snap-item {
+    aspect-ratio: 16/9; border-radius: 6px; overflow: hidden;
+    cursor: pointer; position: relative;
+    border: 2px solid transparent; transition: border-color .15s;
+  }
+  .snap-item:hover { border-color: var(--accent); }
+  .snap-item img {
+    width: 100%; height: 100%; object-fit: cover;
+    display: block;
+  }
+  .snap-item .time-label {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,.85));
+    padding: 1.5rem .5rem .35rem .5rem;
+    font-size: .7rem; text-align: center; color: #fff;
+    font-weight: 500;
+  }
+  .snap-empty {
+    grid-column: 1 / -1; text-align: center; padding: 3rem 1rem;
+    color: var(--text2); font-size: .9rem;
+  }
+
+  .lightbox {
+    display: none; position: fixed; inset: 0; z-index: 999;
+    background: rgba(0,0,0,.92);
+    align-items: center; justify-content: center;
+    padding: 2rem;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img {
+    max-width: 100%; max-height: 90vh; object-fit: contain;
+    border-radius: 4px;
+  }
+  .lightbox .lb-close {
+    position: absolute; top: 1.25rem; right: 1.5rem;
+    background: transparent; border: none; color: #fff;
+    font-size: 1.8rem; cursor: pointer; opacity: .7;
+    line-height: 1;
+  }
+  .lightbox .lb-close:hover { opacity: 1; }
+  .lightbox .lb-info {
+    position: absolute; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,.7); font-size: .85rem;
+    background: rgba(0,0,0,.6); padding: .4rem 1rem; border-radius: 6px;
+  }
+  .lightbox .lb-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,.08); border: none; color: #fff;
+    font-size: 2rem; padding: 1rem .75rem; cursor: pointer; border-radius: 6px;
+    transition: background .15s;
+  }
+  .lightbox .lb-nav:hover { background: rgba(255,255,255,.15); }
+  .lightbox .lb-prev { left: 1rem; }
+  .lightbox .lb-next { right: 1rem; }
+
+  .loading {
+    text-align: center; padding: 3rem; color: var(--text2);
+  }
+  .loading .spinner {
+    display: inline-block; width: 32px; height: 32px;
+    border: 3px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .7s linear infinite;
+    margin-bottom: .75rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 768px) {
+    .container { padding: 1rem; }
+    .header { padding: 1rem; flex-direction: column; gap: .5rem; align-items: flex-start; }
+    .cameras-grid { grid-template-columns: 1fr; }
+    .snapshots-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    .lightbox .lb-nav { font-size: 1.4rem; padding: .6rem .4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Camera Dashboard</h1>
+  <div class="sub">
+    <span><span class="dot"></span>Live</span>
+    <span id="updateTime">—</span>
+    <span><span id="totalCam">0</span> cameras · <span id="totalSnap">0</span> snapshots</span>
+  </div>
+</div>
+
+<div class="container">
+  <div class="nav-bar">
+    <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+  </div>
+
+  <div id="dashboardView">
+    <div class="cameras-grid" id="camerasGrid"></div>
+  </div>
+
+  <div class="detail-panel" id="detailPanel">
+    <div class="detail-header">
+      <h2 id="detailTitle">Camera</h2>
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        <div class="date-picker">
+          <label for="dateInput">Date:</label>
+          <input type="date" id="dateInput">
+        </div>
+        <button class="close-btn" id="closeDetail">Close</button>
+      </div>
+    </div>
+  <div class="stats-row" id="statsRow"></div>
+
+  <div class="list-controls" id="listControls">
+    <label class="group-toggle">
+      <input type="checkbox" id="groupByHour" checked>
+      Group by hour
+    </label>
+    <button class="video-day-btn" id="videoDayBtn" title="Generate video for the whole day">🎬 Day video</button>
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <label for="pageSize" style="font-size:.85rem;color:var(--text2)">Per page:</label>
+      <select class="page-size-select" id="pageSize">
+        <option value="10">10</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="300">300</option>
+      </select>
+    </div>
+    <div class="pagination" id="pagination">
+      <button id="prevPage">Previous</button>
+      <span class="page-info" id="pageInfo">Page 1 of 1</span>
+      <button id="nextPage">Next</button>
+    </div>
+  </div>
+
+  <div class="snapshots-grid" id="snapshotsGrid"></div>
+</div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="lb-close" id="lbClose">&times;</button>
+  <button class="lb-nav lb-prev" id="lbPrev">&lsaquo;</button>
+  <button class="lb-nav lb-next" id="lbNext">&rsaquo;</button>
+  <img id="lbImg" src="" alt="">
+  <div class="lb-info" id="lbInfo"></div>
+</div>
+
+<script>
+const IMG_BASE = '/snapshots/';
+
+let manifest = null;
+let selectedCameraId = null;
+let lightboxItems = [];
+let lightboxIndex = 0;
+
+// Pagination / grouping state
+let currentPage = 1;
+let pageSize = 10;
+let groupByHour = true;
+
+// ── Load manifest ──────────────────────────────────────────────────
+async function loadManifest() {
+  const res = await fetch(`/data/manifest.json?_=${Date.now()}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  manifest = await res.json();
+  manifest.snapshots = manifest.snapshots || {};
+  // Build dates index per camera
+  for (const cam of manifest.cameras) {
+    const sid = String(cam.id);
+    if (manifest.snapshots[sid]) {
+      cam._dates = Object.keys(manifest.snapshots[sid]).sort().reverse();
+    } else {
+      cam._dates = [];
+    }
+    // Count snapshots per date
+    cam._dateCounts = {};
+    for (const [d, snaps] of Object.entries(manifest.snapshots[sid] || {})) {
+      cam._dateCounts[d] = snaps.length;
+    }
+  }
+}
+
+// ── Render dashboard ───────────────────────────────────────────────
+function renderDashboard() {
+  const grid = document.getElementById('camerasGrid');
+  grid.innerHTML = '';
+  for (const cam of manifest.cameras) {
+    const last = cam.last_snapshot;
+    const card = document.createElement('div');
+    card.className = 'camera-card';
+    card.dataset.camId = cam.id;
+
+    let thumbHtml;
+    if (last) {
+      const ago = timeAgo(last.captured_at);
+      thumbHtml = `
+        <div class="thumb-wrap">
+          <img class="thumb" src="${IMG_BASE}${last.path}?_=${Date.now()}" alt="" loading="lazy">
+          <div class="last-overlay">
+            <span>Last snapshot</span>
+            <span class="ago">${ago}</span>
+          </div>
+        </div>`;
+    } else {
+      thumbHtml = `<div class="thumb">No snapshot yet</div>`;
+    }
+
+    const badge = cam.enabled
+      ? `<span class="badge badge-on">Active</span>`
+      : `<span class="badge badge-off">Disabled</span>`;
+
+    const timeStr = last ? formatTime(last.captured_at) : '—';
+    const intervalLabel = cam.interval_seconds >= 60
+      ? `${Math.round(cam.interval_seconds / 60)}m`
+      : `${cam.interval_seconds}s`;
+
+    card.innerHTML = `
+      ${thumbHtml}
+      <div class="info">
+        <div class="name">${escHtml(cam.name)}</div>
+        <div class="meta">
+          <span class="count">${cam.total_snapshots} snapshots</span>
+          <span>every ${intervalLabel}</span>
+        </div>
+        <div class="meta" style="margin-top:2px">
+          <span>${badge}</span>
+          <span class="time">${timeStr}</span>
+        </div>
+      </div>
+    `;
+    card.addEventListener('click', () => openCamera(cam.id));
+    grid.appendChild(card);
+  }
+  document.getElementById('totalCam').textContent = manifest.cameras.length;
+  let total = manifest.cameras.reduce((s, c) => s + c.total_snapshots, 0);
+  document.getElementById('totalSnap').textContent = total;
+  document.getElementById('updateTime').textContent = `Updated ${formatTime(manifest.generated_at)}`;
+}
+
+// ── Open camera detail ─────────────────────────────────────────────
+function openCamera(camId) {
+  selectedCameraId = camId;
+  currentPage = 1;
+  groupByHour = document.getElementById('groupByHour').checked;
+  pageSize = parseInt(document.getElementById('pageSize').value, 10);
+  const cam = manifest.cameras.find(c => c.id === camId);
+  if (!cam) return;
+
+  const panel = document.getElementById('detailPanel');
+  const title = document.getElementById('detailTitle');
+  const dateInput = document.getElementById('dateInput');
+  const statsRow = document.getElementById('statsRow');
+  const grid = document.getElementById('snapshotsGrid');
+
+  title.textContent = `${escHtml(cam.name)}  ·  Snapshots`;
+
+  // Stats
+  statsRow.innerHTML = `
+    <div class="stat-box">Total: <strong>${cam.total_snapshots}</strong></div>
+    <div class="stat-box">Interval: <strong>${cam.interval_seconds}s</strong></div>
+    <div class="stat-box">Days: <strong>${cam._dates.length}</strong></div>
+  `;
+
+  // Date picker: set the latest available date
+  const dates = cam._dates;
+  if (dates.length > 0) {
+    dateInput.value = dates[0];
+    dateInput.min = dates[dates.length - 1];
+    dateInput.max = dates[0];
+  } else {
+    dateInput.value = '';
+  }
+
+  // Render snaps for current date
+  renderSnapshots(camId, dateInput.value);
+
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function getSnapshotHour(snap) {
+  // Return the 'HH:00' hour bucket for a snapshot.
+  try {
+    const raw = snap.captured_at;
+    const d = new Date(raw.replace(' ', 'T') + (raw.includes('T') ? '' : 'T'));
+    if (isNaN(d.getTime())) return '00:00';
+    return `${String(d.getHours()).padStart(2, '0')}:00`;
+  } catch { return '00:00'; }
+}
+
+function appendSnapItem(grid, snap, allItems) {
+  const item = document.createElement('div');
+  item.className = 'snap-item';
+  const timeLabel = formatTimeShort(snap.captured_at);
+  item.innerHTML = `
+    <img src="${IMG_BASE}${snap.path}" alt="" loading="lazy">
+    <div class="time-label">${timeLabel}</div>
+  `;
+  item.addEventListener('click', () => openLightbox(allItems, allItems.indexOf(snap)));
+  grid.appendChild(item);
+}
+
+function updatePagination(totalItems, totalPages) {
+  document.getElementById('prevPage').disabled = currentPage <= 1;
+  document.getElementById('nextPage').disabled = currentPage >= totalPages;
+  document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages} (${totalItems} items)`;
+  const controls = document.getElementById('listControls');
+  controls.style.display = totalItems > 0 ? 'flex' : 'none';
+}
+
+function renderSnapshots(camId, dateStr) {
+  const grid = document.getElementById('snapshotsGrid');
+  const statsRow = document.getElementById('statsRow');
+  const cam = manifest.cameras.find(c => c.id === camId);
+
+  // Update total count in stats
+  const totalForDate = cam._dateCounts[dateStr] || 0;
+  const existingStats = statsRow.querySelectorAll('.stat-box');
+  if (existingStats.length > 3) {
+    existingStats[3].remove();
+  }
+  if (dateStr && totalForDate > 0) {
+    const el = document.createElement('div');
+    el.className = 'stat-box';
+    el.innerHTML = `Date <strong>${dateStr}</strong>: <strong>${totalForDate}</strong> snapshots`;
+    statsRow.appendChild(el);
+  }
+
+  const sid = String(camId);
+  const allSnaps = (manifest.snapshots[sid] && manifest.snapshots[sid][dateStr]) || [];
+
+  grid.innerHTML = '';
+  if (allSnaps.length === 0) {
+    grid.innerHTML = `<div class="snap-empty">No snapshots for this date</div>`;
+    updatePagination(0, 1);
+    return;
+  }
+
+  // Sort by time ascending
+  allSnaps.sort((a, b) => a.captured_at.localeCompare(b.captured_at));
+
+  const totalPages = Math.max(1, Math.ceil(allSnaps.length / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const start = (currentPage - 1) * pageSize;
+  const pageSnaps = allSnaps.slice(start, start + pageSize);
+
+  let lastHour = null;
+  for (const snap of pageSnaps) {
+    const hour = getSnapshotHour(snap);
+    if (groupByHour && hour !== lastHour) {
+      lastHour = hour;
+      const hourSnaps = allSnaps.filter(s => getSnapshotHour(s) === hour);
+      const header = document.createElement('div');
+      header.className = 'hour-group';
+      header.innerHTML = `
+        <span>${hour} – ${String(parseInt(hour, 10) + 1).padStart(2, '0')}:00</span>
+        <span class="hour-count">${hourSnaps.length}</span>
+        <button class="video-btn" data-hour="${hour}" title="Generate video for this hour">🎬 Video</button>
+      `;
+      grid.appendChild(header);
+    }
+    appendSnapItem(grid, snap, allSnaps);
+  }
+
+  updatePagination(allSnaps.length, totalPages);
+
+  // Wire up hour video buttons
+  for (const btn of grid.querySelectorAll('.video-btn')) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const hour = btn.dataset.hour;
+      requestVideo(camId, dateStr, hour);
+    });
+  }
+}
+
+// ── Lightbox ───────────────────────────────────────────────────────
+function openLightbox(items, index) {
+  lightboxItems = items;
+  lightboxIndex = index;
+  showLightboxImage();
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function showLightboxImage() {
+  const item = lightboxItems[lightboxIndex];
+  if (!item) return;
+  const img = document.getElementById('lbImg');
+  img.src = IMG_BASE + item.path;
+  const label = formatTime(item.captured_at) + `  ·  ${(item.file_size / 1024).toFixed(0)} KB`;
+  document.getElementById('lbInfo').textContent = label;
+  document.getElementById('lbPrev').style.display = lightboxIndex > 0 ? '' : 'none';
+  document.getElementById('lbNext').style.display = lightboxIndex < lightboxItems.length - 1 ? '' : 'none';
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function prevLightbox() {
+  if (lightboxIndex > 0) { lightboxIndex--; showLightboxImage(); }
+}
+function nextLightbox() {
+  if (lightboxIndex < lightboxItems.length - 1) { lightboxIndex++; showLightboxImage(); }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────
+function formatTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T'));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
+}
+
+function formatTimeShort(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T'));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return iso; }
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'T'));
+    if (isNaN(d.getTime())) return iso;
+    const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  } catch { return iso; }
+}
+
+function escHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ── Video request ──────────────────────────────────────────────────
+async function requestVideo(cameraId, dateStr, hour) {
+  const label = hour ? `hour ${hour}` : `the whole day`;
+  if (!confirm(`Generate video for ${label}? This may take a moment.`)) return;
+
+  const btn = hour
+    ? document.querySelector(`.video-btn[data-hour="${hour}"]`)
+    : document.getElementById('videoDayBtn');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/videos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ camera_id: cameraId, date: dateStr, hour }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      const detail = Array.isArray(err.detail) ? err.detail.map(e => e.msg).join('; ') : (err.detail || `HTTP ${res.status}`);
+      throw new Error(detail);
+    }
+    const data = await res.json();
+    window.open(data.video_url, '_blank');
+  } catch (err) {
+    alert(`Video generation failed: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── Event handlers ─────────────────────────────────────────────────
+document.getElementById('closeDetail').addEventListener('click', () => {
+  document.getElementById('detailPanel').classList.remove('visible');
+  selectedCameraId = null;
+});
+
+document.getElementById('dateInput').addEventListener('change', (e) => {
+  currentPage = 1;
+  if (selectedCameraId) renderSnapshots(selectedCameraId, e.target.value);
+});
+
+document.getElementById('groupByHour').addEventListener('change', (e) => {
+  groupByHour = e.target.checked;
+  currentPage = 1;
+  if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+});
+
+document.getElementById('pageSize').addEventListener('change', (e) => {
+  pageSize = parseInt(e.target.value, 10);
+  currentPage = 1;
+  if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+});
+
+document.getElementById('prevPage').addEventListener('click', () => {
+  if (currentPage > 1) {
+    currentPage--;
+    if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+  }
+});
+
+document.getElementById('nextPage').addEventListener('click', () => {
+  currentPage++;
+  if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+});
+
+document.getElementById('videoDayBtn').addEventListener('click', () => {
+  if (selectedCameraId) requestVideo(selectedCameraId, document.getElementById('dateInput').value, null);
+});
+
+document.getElementById('lbClose').addEventListener('click', closeLightbox);
+document.getElementById('lbPrev').addEventListener('click', prevLightbox);
+document.getElementById('lbNext').addEventListener('click', nextLightbox);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeLightbox();
+  if (document.getElementById('lightbox').classList.contains('open')) {
+    if (e.key === 'ArrowLeft') prevLightbox();
+    if (e.key === 'ArrowRight') nextLightbox();
+  }
+});
+
+document.getElementById('lightbox').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeLightbox();
+});
+
+// ── Init ───────────────────────────────────────────────────────────
+let refreshTimer = null;
+const REFRESH_INTERVAL_MS = 30000;
+
+async function refreshDashboard() {
+  try {
+    await loadManifest();
+    renderDashboard();
+    if (selectedCameraId) {
+      renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+    } else if (manifest.cameras.length > 0) {
+      openCamera(manifest.cameras[0].id);
+    }
+  } catch (err) {
+    console.error('Auto-refresh failed:', err);
+  }
+}
+
+(async function init() {
+  document.getElementById('camerasGrid').innerHTML =
+    `<div class="loading"><div class="spinner"></div>Loading dashboard...</div>`;
+
+  try {
+    await loadManifest();
+    renderDashboard();
+    if (manifest.cameras.length > 0) {
+      openCamera(manifest.cameras[0].id);
+    } else {
+      document.getElementById('camerasGrid').innerHTML =
+        `<div class="snap-empty">No cameras found in manifest.json.</div>`;
+    }
+    refreshTimer = setInterval(refreshDashboard, REFRESH_INTERVAL_MS);
+  } catch (err) {
+    console.error('Dashboard init failed:', err);
+    document.getElementById('camerasGrid').innerHTML =
+      `<div class="snap-empty">
+        <strong>Failed to load dashboard data.</strong><br>
+        ${escHtml(err.message)}<br><br>
+        <small>Make sure the server is running and manifest.json exists.<br>
+        Try refreshing with Ctrl+Shift+R (or Cmd+Shift+R).</small>
+      </div>`;
+  }
+})();
+</script>
+</body>
+</html>

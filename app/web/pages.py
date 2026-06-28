@@ -7,7 +7,7 @@ Jinja2 templates.
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from loguru import logger
 
@@ -19,25 +19,18 @@ templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templat
 router = APIRouter(tags=["pages"])
 
 
-@router.get("/", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    service: SnapshotService = Depends(get_snapshot_service),
-):
-    """Render the dashboard page with camera snapshot overview.
+@router.get("/")
+async def dashboard():
+    """Redirect the root path to the static dashboard.
 
-    \f
-    Args:
-        request: The incoming HTTP request.
+    The standalone dashboard in index.html provides pagination, hour
+    grouping, and video generation, so the old Jinja2 dashboard is no
+    longer the primary entry point.
 
     Returns:
-        An HTMLResponse rendering dashboard.html with camera data.
+        A 307 redirect to /index.html.
     """
-    data = await service.get_dashboard_data()
-    logger.debug(f"Rendering dashboard with {len(data)} cameras")
-    return templates.TemplateResponse(
-        request, "dashboard.html", {"cameras": data},
-    )
+    return RedirectResponse(url="/index.html")
 
 
 @router.get("/report", response_class=HTMLResponse)

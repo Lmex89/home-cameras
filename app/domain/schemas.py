@@ -5,7 +5,7 @@ Provides input schemas (``CameraCreate``, ``CameraUpdate``), read schemas
 the API layer.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
@@ -109,3 +109,17 @@ class CameraWithLastSnapshot(CameraRead):
     """Serialize a camera together with its most recent snapshot."""
 
     last_snapshot: SnapshotRead | None = None
+
+
+class VideoRequest(BaseModel):
+    """Validate payload for timelapse video generation."""
+
+    camera_id: int = Field(ge=1)
+    date: date
+    hour: int | None = Field(default=None, ge=0, le=23)
+
+
+class VideoResponse(BaseModel):
+    """Serialize the result of a successful video generation."""
+
+    video_url: str

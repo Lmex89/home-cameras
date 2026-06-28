@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -46,7 +48,7 @@ logger.add(
 # ──────────────────────────────────────────────────────────────────────
 
 from app.core.database import init_db
-from app.api.routers import cameras, snapshots, report
+from app.api.routers import cameras, snapshots, report, videos
 from app.web import pages
 from app.seed import seed_from_yaml
 from app.scheduler import scheduler, load_schedule
@@ -83,6 +85,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 static_dir = Path(__file__).resolve().parent / "web" / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
@@ -94,3 +104,34 @@ app.include_router(pages.router)
 app.include_router(cameras.router)
 app.include_router(snapshots.router)
 app.include_router(report.router)
+app.include_router(videos.router)
+
+
+@app.get("/index.html", response_class=HTMLResponse)
+async def serve_dashboard_index():
+    """Serve the standalone static dashboard page.
+
+    \f
+    Returns:
+        The contents of the project-root index.html file.
+    """
+    index_path = Path(__file__).resolve().parent.parent / "index.html"
+    return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+
+
+@app.get("/data/manifest.json")
+async def serve_manifest():
+    """Serve the dashboard manifest JSON.
+
+    \f
+    Returns:
+        A FileResponse serving data/manifest.json.
+
+    Raises:
+        HTTPException: 404 when the manifest has not been generated yet.
+    """
+    manifest_path = settings.data_dir / "manifest.json"
+    if not manifest_path.exists():
+        logger.warning(f"Manifest not found: {manifest_path}")
+        raise HTTPException(status_code=404, detail="Manifest not generated yet")
+    return FileResponse(str(manifest_path), media_type="application/json")
