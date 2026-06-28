@@ -628,9 +628,10 @@ function renderDashboard() {
     let feed;
     if (last) {
       const ago = timeAgo(last.captured_at);
+      const lp = last.image_path || last.path;
       feed = `
         <div class="feed">
-          <img src="${IMG_BASE}${last.path}?_=${Date.now()}" alt="" loading="lazy">
+          <img src="${IMG_BASE}${lp}?_=${Date.now()}" alt="" loading="lazy">
           <div class="overlay"></div>
           <span class="cam-id">CH ${cam.id}</span>
           <span class="rec-indicator"><span class="dot"></span>Live</span>
@@ -704,7 +705,8 @@ function openCamera(camId) {
   const previewInfo = document.getElementById('previewInfo');
   const last = cam.last_snapshot;
   if (last) {
-    previewImg.src = `${IMG_BASE}${last.path}?_=${Date.now()}`;
+    const lp = last.image_path || last.path;
+    previewImg.src = `${IMG_BASE}${lp}?_=${Date.now()}`;
     previewInfo.innerHTML = `<span>${formatTimeShort(last.captured_at)}</span><span class="ago">${timeAgo(last.captured_at)}</span>`;
     preview.classList.add('has-image');
   } else {
@@ -739,8 +741,9 @@ function appendSnap(g, snap, all, idx) {
   const el = document.createElement('div');
   el.className = 'snap-item';
   el.style.setProperty('--i', idx);
+  const sp = snap.image_path || snap.path;
   el.innerHTML = `
-    <img src="${IMG_BASE}${snap.path}" alt="" loading="lazy">
+    <img src="${IMG_BASE}${sp}" alt="" loading="lazy">
     <div class="stamp">${formatTimeShort(snap.captured_at)}</div>
   `;
   el.addEventListener('click', () => openLB(all, all.indexOf(snap)));
@@ -846,7 +849,7 @@ function openLB(items, index) {
 function showLB() {
   const item = lbItems[lbIndex];
   if (!item) return;
-  document.getElementById('lbImg').src = IMG_BASE + item.path;
+  document.getElementById('lbImg').src = IMG_BASE + (item.image_path || item.path);
   document.getElementById('lbInfo').textContent = formatTime(item.captured_at) + `  ·  ${(item.file_size / 1024).toFixed(0)} KB`;
   document.getElementById('lbPrev').style.display = lbIndex > 0 ? '' : 'none';
   document.getElementById('lbNext').style.display = lbIndex < lbItems.length - 1 ? '' : 'none';
