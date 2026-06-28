@@ -201,6 +201,18 @@
   }
   .video-day-btn:hover { filter: brightness(1.1); }
   .video-day-btn:disabled { opacity: .5; cursor: wait; }
+  .hour-picker { display:flex; align-items:center; gap:.35rem; }
+  .hour-picker select {
+    padding: .25rem .5rem; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: .85rem;
+  }
+  .hour-video-btn {
+    padding: .35rem .7rem; border-radius: 6px; border: none;
+    background: var(--accent2); color: #fff; cursor: pointer;
+    font-size: .85rem; font-weight: 600;
+  }
+  .hour-video-btn:hover { filter: brightness(1.1); }
+  .hour-video-btn:disabled { opacity: .5; cursor: wait; }
 
   .snapshots-grid {
     display: grid;
@@ -309,6 +321,13 @@
         <div class="date-picker">
           <label for="dateInput">Date:</label>
           <input type="date" id="dateInput">
+        </div>
+        <div class="hour-picker">
+          <label for="hourSelect">Hour:</label>
+          <select id="hourSelect">
+            <option value="">All day</option>
+          </select>
+          <button class="hour-video-btn" id="hourVideoBtn">🎬 Video</button>
         </div>
         <button class="close-btn" id="closeDetail">Close</button>
       </div>
@@ -755,9 +774,28 @@ async function refreshDashboard() {
   }
 }
 
+function populateHourSelect() {
+  const sel = document.getElementById('hourSelect');
+  for (let h = 0; h < 24; h++) {
+    const opt = document.createElement('option');
+    opt.value = h;
+    opt.textContent = `${String(h).padStart(2, '0')}:00 – ${String(h + 1).padStart(2, '0')}:00`;
+    sel.appendChild(opt);
+  }
+}
+
 (async function init() {
   document.getElementById('camerasGrid').innerHTML =
     `<div class="loading"><div class="spinner"></div>Loading dashboard...</div>`;
+
+  populateHourSelect();
+
+  document.getElementById('hourVideoBtn').addEventListener('click', () => {
+    const hourEl = document.getElementById('hourSelect');
+    const hour = hourEl.value;
+    if (!selectedCameraId) return;
+    requestVideo(selectedCameraId, document.getElementById('dateInput').value, hour || null);
+  });
 
   try {
     await loadManifest();
