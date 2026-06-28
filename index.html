@@ -666,7 +666,7 @@ async function requestVideo(cameraId, dateStr, hour) {
     const res = await fetch('/api/videos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ camera_id: cameraId, date: dateStr, hour }),
+      body: JSON.stringify({ camera_id: cameraId, date: dateStr, hour: hour != null ? parseInt(hour, 10) : null }),
     });
     if (!res.ok) {
       const err = await res.json();
