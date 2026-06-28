@@ -5,486 +5,553 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Camera Monitor</title>
+<title>Sentinel · Surveillance</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  @import url('https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
   :root {
-    --bg: #08080a;
-    --surface: rgba(28, 28, 34, 0.72);
-    --surface2: rgba(44, 44, 52, 0.64);
-    --border: rgba(255, 255, 255, 0.08);
-    --text: #f2f2f7;
-    --text2: rgba(242, 242, 247, 0.55);
-    --accent: #0a84ff;
-    --accent2: #409cff;
-    --green: #30d158;
-    --red: #ff453a;
-    --orange: #ff9f0a;
-    --radius: 14px;
-    --radius-lg: 20px;
-    --safe-top: env(safe-area-inset-top, 20px);
+    --bg: #08080c;
+    --surface: rgba(18, 18, 24, 0.85);
+    --surface2: rgba(30, 30, 40, 0.7);
+    --border: rgba(255, 255, 255, 0.06);
+    --border-accent: rgba(255, 160, 0, 0.2);
+    --text: #e8e8ed;
+    --text2: rgba(232, 232, 237, 0.45);
+    --text3: rgba(232, 232, 237, 0.25);
+    --green: #34c759;
+    --red: #ff3b30;
+    --amber: #ff9f0a;
+    --cyan: #5ac8fa;
+    --accent: var(--amber);
+    --radius: 10px;
+    --safe-top: env(safe-area-inset-top, 16px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --spring: cubic-bezier(0.32, 0.72, 0, 1);
+    --crt-on: rgba(255, 160, 0, 0.03);
   }
 
-  html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+  html { font-size: 15px; -webkit-tap-highlight-color: transparent; }
   body {
-    font-family: -apple-system, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-family: 'Azeret Mono', 'SF Mono', 'Courier New', monospace;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
     min-height: 100dvh;
     overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
     padding-top: var(--safe-top);
+    -webkit-font-smoothing: antialiased;
+    position: relative;
   }
 
-  ::selection { background: rgba(10, 132, 255, 0.3); }
+  /* ── CRT scan-line overlay ───────────────────────────────── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 9999;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 2px,
+      rgba(0, 0, 0, 0.06) 2px,
+      rgba(0, 0, 0, 0.06) 4px
+    );
+  }
+
+  ::selection { background: rgba(255, 160, 0, 0.3); }
 
   /* ── Status bar ───────────────────────────────────────────── */
-  .status-bar {
+  .status {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 16px 0;
-    font-size: 12px; font-weight: 600; color: var(--text2);
-    letter-spacing: 0.01em;
-    height: 44px;
+    padding: 4px 14px 0; height: 40px;
+    font-size: 10px; font-weight: 500; color: var(--text3);
+    letter-spacing: 0.08em; text-transform: uppercase;
   }
-  .status-bar .live {
-    display: flex; align-items: center; gap: 6px;
+  .status .sys {
+    display: flex; align-items: center; gap: 8px;
   }
-  .status-bar .live .dot {
-    width: 7px; height: 7px; border-radius: 50%;
+  .status .sys .badge {
+    display: flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 3px;
+    background: rgba(52, 199, 89, 0.08);
+    border: 1px solid rgba(52, 199, 89, 0.15);
+    color: var(--green); font-size: 9px;
+  }
+  .status .sys .badge .dot {
+    width: 5px; height: 5px; border-radius: 50%;
     background: var(--green);
-    box-shadow: 0 0 8px rgba(48, 209, 88, 0.5);
-    animation: pulse-dot 2s ease-in-out infinite;
+    box-shadow: 0 0 6px rgba(52,199,89,0.5);
+    animation: pulse-rec 1.8s ease-in-out infinite;
   }
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.9); }
+  @keyframes pulse-rec {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
-  .status-bar .counts {
-    display: flex; gap: 12px;
+  .status .stats {
+    display: flex; gap: 10px;
   }
-  .status-bar .counts span { opacity: 0.6; }
-  .status-bar .counts strong { color: var(--text); font-weight: 600; opacity: 1; }
+  .status .stats span { opacity: 0.6; }
+  .status .stats strong { color: var(--text2); font-weight: 600; opacity: 1; }
 
   /* ── Header ────────────────────────────────────────────────── */
   .header {
-    padding: 4px 20px 16px;
+    padding: 2px 16px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header .top {
+    display: flex; align-items: center; justify-content: space-between;
   }
   .header h1 {
-    font-size: 34px; font-weight: 700; letter-spacing: -0.03em;
-    background: linear-gradient(135deg, var(--text) 60%, var(--text2));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .header .sub {
-    font-size: 13px; color: var(--text2); margin-top: 2px;
+    font-size: 20px; font-weight: 700; letter-spacing: -0.01em;
+    color: var(--text);
     display: flex; align-items: center; gap: 8px;
   }
-  .header .sub #updateTime { opacity: 0.5; }
+  .header h1 .marker {
+    display: inline-block; width: 3px; height: 18px;
+    background: var(--accent); border-radius: 2px;
+    box-shadow: 0 0 8px rgba(255, 160, 0, 0.3);
+  }
+  .header .sub {
+    font-size: 10px; color: var(--text3); margin-top: 4px;
+    letter-spacing: 0.05em;
+    display: flex; align-items: center; gap: 12px;
+  }
 
   /* ── Camera grid (mobile-first) ────────────────────────────── */
-  .cameras-grid {
-    display: flex; flex-direction: column; gap: 12px;
-    padding: 0 16px 80px;
+  .cameras {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 12px 24px;
   }
-  .camera-card {
+  .cam-card {
     background: var(--surface);
-    backdrop-filter: blur(40px) saturate(1.4);
-    -webkit-backdrop-filter: blur(40px) saturate(1.4);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius);
     border: 1px solid var(--border);
     overflow: hidden; cursor: pointer;
-    transition: transform 0.35s var(--spring), box-shadow 0.35s var(--spring);
-    animation: card-in 0.5s var(--spring) both;
+    position: relative;
+    transition: border-color 0.25s, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: feed-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
-  .camera-card:nth-child(1) { animation-delay: 0.05s; }
-  .camera-card:nth-child(2) { animation-delay: 0.1s; }
-  .camera-card:nth-child(3) { animation-delay: 0.15s; }
-  .camera-card:nth-child(4) { animation-delay: 0.2s; }
-  .camera-card:nth-child(5) { animation-delay: 0.25s; }
-  .camera-card:nth-child(6) { animation-delay: 0.3s; }
+  .cam-card:nth-child(1) { animation-delay: 0.04s; }
+  .cam-card:nth-child(2) { animation-delay: 0.08s; }
+  .cam-card:nth-child(3) { animation-delay: 0.12s; }
+  .cam-card:nth-child(4) { animation-delay: 0.16s; }
+  .cam-card:nth-child(5) { animation-delay: 0.20s; }
+  .cam-card:nth-child(6) { animation-delay: 0.24s; }
 
-  @keyframes card-in {
-    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  @keyframes feed-in {
+    from { opacity: 0; transform: translateY(18px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
-  .camera-card:active { transform: scale(0.97); }
+  .cam-card:active { border-color: var(--accent); transform: scale(0.98); }
 
-  .camera-card .thumb-wrap {
+  .cam-card .feed {
     position: relative; width: 100%;
   }
-  .camera-card .thumb {
+  .cam-card .feed img {
     width: 100%; aspect-ratio: 16/9; object-fit: cover;
     display: block; background: var(--surface2);
+    filter: contrast(1.05) saturate(0.85);
   }
-  .camera-card .thumb-empty {
+  .cam-card .feed .empty {
     width: 100%; aspect-ratio: 16/9;
     display: flex; align-items: center; justify-content: center;
-    background: var(--surface2); color: var(--text2); font-size: 13px;
+    background: var(--surface2); color: var(--text3);
+    font-size: 11px; letter-spacing: 0.05em;
   }
-  .camera-card .last-overlay {
+  .cam-card .feed .overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(
+      180deg,
+      transparent 50%,
+      rgba(0, 0, 0, 0.6) 92%,
+      rgba(0, 0, 0, 0.9) 100%
+    );
+    pointer-events: none;
+  }
+  .cam-card .feed .info-bar {
     position: absolute; bottom: 0; left: 0; right: 0;
-    background: linear-gradient(transparent 30%, rgba(0,0,0,0.7));
-    padding: 3rem 14px 10px 14px;
     display: flex; justify-content: space-between; align-items: flex-end;
-    font-size: 12px; color: rgba(255,255,255,0.8);
+    padding: 2.5rem 10px 7px 10px;
+    font-size: 9px; color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 0.04em;
+    pointer-events: none;
   }
-  .camera-card .last-overlay .ago {
-    font-weight: 600; color: var(--green);
-    font-feature-settings: "tnum";
+  .cam-card .feed .info-bar .ago {
+    color: var(--green);
+    font-weight: 600;
   }
-  .camera-card .info {
-    padding: 14px 16px 16px;
+
+  /* Camera ID badge on feed */
+  .cam-card .feed .cam-id {
+    position: absolute; top: 6px; left: 6px;
+    font-size: 8px; font-weight: 600; letter-spacing: 0.08em;
+    padding: 2px 6px; border-radius: 2px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .cam-card .feed .rec-indicator {
+    position: absolute; top: 6px; right: 6px;
+    display: flex; align-items: center; gap: 4px;
+    font-size: 8px; font-weight: 600; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 2px;
+    background: rgba(255, 59, 48, 0.12);
+    border: 1px solid rgba(255, 59, 48, 0.2);
+    color: var(--red);
+    text-transform: uppercase;
+  }
+  .cam-card .feed .rec-indicator .dot {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--red);
+    animation: pulse-rec 1.2s ease-in-out infinite;
+  }
+
+  .cam-card .meta {
     display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px 11px;
   }
-  .camera-card .info .left { min-width: 0; }
-  .camera-card .info .name {
-    font-size: 17px; font-weight: 590; letter-spacing: -0.01em;
+  .cam-card .meta .left { min-width: 0; }
+  .cam-card .meta .name {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.01em;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .camera-card .info .meta {
-    font-size: 13px; color: var(--text2); margin-top: 2px;
-    display: flex; align-items: center; gap: 8px;
+  .cam-card .meta .detail {
+    font-size: 10px; color: var(--text2); margin-top: 1px;
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 400;
   }
-  .camera-card .info .meta .count { color: var(--accent); }
-  .camera-card .info .badge {
-    font-size: 11px; font-weight: 590; padding: 3px 10px;
-    border-radius: 99px; flex-shrink: 0;
+  .cam-card .meta .detail .sep { opacity: 0.3; }
+  .cam-card .meta .chip {
+    font-size: 9px; font-weight: 500; padding: 3px 8px;
+    border-radius: 3px; flex-shrink: 0;
+    letter-spacing: 0.03em;
   }
-  .badge-on { background: rgba(48,209,88,0.15); color: var(--green); }
-  .badge-off { background: rgba(255,69,58,0.15); color: var(--red); }
+  .chip-on { background: rgba(52, 199, 89, 0.08); color: var(--green); border: 1px solid rgba(52,199,89,0.12); }
+  .chip-off { background: rgba(255, 59, 48, 0.08); color: var(--red); border: 1px solid rgba(255,59,48,0.12); }
 
-  /* ── Bottom sheet (iOS-style) ──────────────────────────────── */
-  .sheet-overlay {
+  /* ── Bottom sheet ──────────────────────────────────────────── */
+  .sheet-mask {
     display: none; position: fixed; inset: 0; z-index: 200;
-    background: rgba(0,0,0,0.4);
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
-    animation: fade-in 0.25s ease;
+    background: rgba(0, 0, 0, 0.5);
+    animation: mask-in 0.2s ease;
   }
-  .sheet-overlay.open { display: block; }
-  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .sheet-mask.open { display: block; }
+  @keyframes mask-in { from { opacity: 0; } to { opacity: 1; } }
 
   .sheet {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 201;
-    background: rgba(22, 22, 26, 0.95);
-    backdrop-filter: blur(60px) saturate(1.6);
-    -webkit-backdrop-filter: blur(60px) saturate(1.6);
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: rgba(12, 12, 16, 0.97);
+    border-radius: 14px 14px 0 0;
     border-top: 1px solid var(--border);
     padding: 0 0 var(--safe-bottom);
-    max-height: 92vh; max-height: 92dvh;
+    max-height: 90vh; max-height: 90dvh;
     display: flex; flex-direction: column;
     transform: translateY(100%);
-    transition: transform 0.5s var(--spring);
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .sheet.open { transform: translateY(0); }
 
-  .sheet .sheet-handle {
-    width: 36px; height: 5px; border-radius: 3px;
-    background: rgba(255,255,255,0.15);
-    margin: 8px auto 0;
-    flex-shrink: 0;
+  .sheet .grip {
+    width: 32px; height: 4px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 8px auto 0; flex-shrink: 0;
   }
-  .sheet .sheet-header {
+  .sheet .sh-head {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 20px 8px; flex-shrink: 0;
+    padding: 10px 16px 4px; flex-shrink: 0;
   }
-  .sheet .sheet-header h2 {
-    font-size: 20px; font-weight: 700; letter-spacing: -0.02em;
+  .sheet .sh-head h2 {
+    font-size: 14px; font-weight: 600; letter-spacing: 0.01em;
+    display: flex; align-items: center; gap: 8px;
   }
-  .sheet .sheet-header .close-sheet {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: rgba(255,255,255,0.08);
-    border: none; color: var(--text2); font-size: 18px;
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: background 0.2s;
+  .sheet .sh-head h2 .ch-id {
+    font-size: 10px; font-weight: 500;
+    color: var(--text2); letter-spacing: 0.06em;
   }
-  .sheet .sheet-header .close-sheet:active { background: rgba(255,255,255,0.15); }
+  .sheet .sh-head .close-sh {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text2); font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit; transition: border-color 0.2s;
+  }
+  .sheet .sh-head .close-sh:active { border-color: var(--text2); }
 
-  .sheet .sheet-controls {
-    display: flex; gap: 8px; padding: 8px 20px 12px;
-    overflow-x: auto; flex-shrink: 0; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+  .sheet .sh-tools {
+    display: flex; gap: 6px; padding: 6px 16px 8px;
+    overflow-x: auto; flex-shrink: 0;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
   }
-  .sheet .sheet-controls::-webkit-scrollbar { display: none; }
+  .sheet .sh-tools::-webkit-scrollbar { display: none; }
 
-  .sheet .control-group {
-    display: flex; align-items: center; gap: 6px;
+  .sheet .tool-group {
+    display: flex; align-items: center; gap: 4px;
     background: var(--surface2);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: 10px; padding: 4px 6px 4px 10px;
-    flex-shrink: 0;
-    border: 1px solid var(--border);
+    border-radius: 6px; padding: 3px 5px 3px 8px;
+    flex-shrink: 0; border: 1px solid var(--border);
   }
-  .sheet .control-group label {
-    font-size: 12px; color: var(--text2); font-weight: 500;
+  .sheet .tool-group label {
+    font-size: 9px; color: var(--text3); font-weight: 500;
+    letter-spacing: 0.04em; text-transform: uppercase;
   }
-  .sheet .control-group input[type="date"],
-  .sheet .control-group select {
+  .sheet .tool-group input[type="date"],
+  .sheet .tool-group select {
     background: transparent; border: none; color: var(--text);
-    font-size: 13px; font-weight: 500; padding: 4px 4px 4px 0;
+    font-size: 11px; font-weight: 500; padding: 3px 2px 3px 0;
     -webkit-appearance: none; appearance: none; outline: none;
     font-family: inherit;
   }
-  .sheet .control-group input[type="date"] { min-width: 110px; }
-  .sheet .control-group select { min-width: 44px; padding-right: 16px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' fill='%238b8b93'%3E%3Cpath d='M0 0l4 5 4-5z'/%3E%3C/svg%3E") no-repeat right center; }
+  .sheet .tool-group input[type="date"] { min-width: 100px; }
+  .sheet .tool-group select { min-width: 36px; padding-right: 14px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' fill='%23555555'%3E%3Cpath d='M0 0l3.5 4 3.5-4z'/%3E%3C/svg%3E") no-repeat right center; }
 
-  .sheet .video-chip {
-    background: var(--accent); border: none; color: #fff;
-    font-size: 12px; font-weight: 590; padding: 6px 12px;
-    border-radius: 8px; cursor: pointer; flex-shrink: 0;
-    font-family: inherit; white-space: nowrap;
-    transition: opacity 0.2s;
+  .sheet .btn-vid {
+    background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.15);
+    color: var(--red); font-size: 9px; font-weight: 600;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    flex-shrink: 0; font-family: inherit; letter-spacing: 0.04em;
+    text-transform: uppercase; white-space: nowrap;
+    transition: background 0.2s;
   }
-  .sheet .video-chip:active { opacity: 0.7; }
-  .sheet .video-chip:disabled { opacity: 0.4; }
-  .sheet .video-chip.day-chip { background: var(--accent2); }
+  .sheet .btn-vid:active { background: rgba(255, 59, 48, 0.2); }
+  .sheet .btn-vid:disabled { opacity: 0.3; }
+  .sheet .btn-vid.day {
+    background: rgba(255, 160, 0, 0.08); border-color: rgba(255, 160, 0, 0.15);
+    color: var(--amber);
+  }
+  .sheet .btn-vid.day:active { background: rgba(255, 160, 0, 0.16); }
 
-  .sheet .sheet-body {
+  .sheet .sh-body {
     flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: 4px 16px 12px;
+    padding: 2px 12px 8px;
   }
 
-  /* ── Stats pills ───────────────────────────────────────────── */
-  .stats-row {
-    display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap;
-    padding: 0 4px;
+  /* ── Stats ─────────────────────────────────────────────────── */
+  .stats {
+    display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap;
   }
-  .stat-pill {
+  .stat-p {
     background: var(--surface2);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    padding: 5px 10px; border-radius: 99px;
-    font-size: 12px; color: var(--text2); border: 1px solid var(--border);
-    font-feature-settings: "tnum";
+    padding: 4px 8px; border-radius: 4px;
+    font-size: 9px; color: var(--text3);
+    border: 1px solid var(--border);
+    letter-spacing: 0.03em; font-feature-settings: "tnum";
   }
-  .stat-pill strong { color: var(--text); font-weight: 590; }
+  .stat-p strong { color: var(--text2); font-weight: 600; }
 
   /* ── Snapshots grid ────────────────────────────────────────── */
-  .snapshots-grid {
+  .snap-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
+    gap: 4px;
   }
   .snap-item {
-    aspect-ratio: 1/1; border-radius: 8px; overflow: hidden;
+    aspect-ratio: 16/9; border-radius: 4px; overflow: hidden;
     cursor: pointer; position: relative;
     background: var(--surface2);
-    transition: transform 0.2s var(--spring), box-shadow 0.2s var(--spring);
-    animation: snap-in 0.4s var(--spring) both;
-    animation-delay: calc(var(--i, 0) * 20ms);
+    border: 1px solid transparent;
+    transition: border-color 0.2s;
+    animation: snap-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 12ms);
   }
-  .snap-item:active { transform: scale(0.95); }
+  @keyframes snap-in {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .snap-item:active { border-color: var(--accent); }
   .snap-item img {
     width: 100%; height: 100%; object-fit: cover; display: block;
   }
-  .snap-item .time-label {
+  .snap-item .stamp {
     position: absolute; bottom: 0; left: 0; right: 0;
-    background: linear-gradient(transparent 40%, rgba(0,0,0,0.75));
-    padding: 1.2rem 5px 4px 5px;
-    font-size: 10px; text-align: center; color: rgba(255,255,255,0.7);
-    font-weight: 500; letter-spacing: 0.02em;
+    background: linear-gradient(transparent 40%, rgba(0,0,0,0.8));
+    padding: 1rem 4px 3px 4px;
+    font-size: 8px; text-align: right; color: rgba(255,255,255,0.5);
+    font-weight: 500; letter-spacing: 0.04em;
   }
   .snap-empty {
-    grid-column: 1 / -1; text-align: center; padding: 40px 16px;
-    color: var(--text2); font-size: 14px;
+    grid-column: 1 / -1; text-align: center; padding: 32px 12px;
+    color: var(--text3); font-size: 11px; letter-spacing: 0.04em;
   }
-  .snap-empty strong { color: var(--text); }
 
-  /* ── Hour group headers inside grid ────────────────────────── */
-  .hour-group {
+  /* ── Hour headers ──────────────────────────────────────────── */
+  .hour-h {
     grid-column: 1 / -1;
-    display: flex; align-items: center; gap: 8px;
-    padding: 16px 4px 4px; margin-top: 4px;
-    font-size: 14px; font-weight: 600; color: var(--accent2);
-    letter-spacing: -0.01em;
+    display: flex; align-items: center; gap: 6px;
+    padding: 12px 2px 3px; margin-top: 2px;
+    font-size: 10px; font-weight: 600; color: var(--accent);
+    letter-spacing: 0.06em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
   }
-  .hour-group:first-child { padding-top: 4px; margin-top: 0; }
-  .hour-group .hour-count {
-    font-size: 12px; font-weight: 500; color: var(--text2);
-    background: var(--surface2); padding: 2px 8px; border-radius: 99px;
+  .hour-h:first-child { padding-top: 2px; margin-top: 0; }
+  .hour-h .cnt {
+    font-size: 8px; font-weight: 500; color: var(--text3);
+    background: var(--surface2); padding: 1px 6px; border-radius: 2px;
   }
-  .hour-group .video-btn {
+  .hour-h .btn-vid-s {
     margin-left: auto;
-    background: var(--accent); border: none; color: #fff;
-    padding: 4px 10px; border-radius: 6px; cursor: pointer;
-    font-size: 12px; font-weight: 500; font-family: inherit;
-    transition: opacity 0.2s;
+    background: rgba(255, 59, 48, 0.08); border: 1px solid rgba(255, 59, 48, 0.12);
+    color: var(--red); padding: 2px 7px; border-radius: 3px; cursor: pointer;
+    font-size: 8px; font-weight: 600; font-family: inherit;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    transition: background 0.2s;
   }
-  .hour-group .video-btn:active { opacity: 0.7; }
-  .hour-group .video-btn:disabled { opacity: 0.4; }
+  .hour-h .btn-vid-s:active { background: rgba(255, 59, 48, 0.16); }
+  .hour-h .btn-vid-s:disabled { opacity: 0.3; }
 
   /* ── Pagination ────────────────────────────────────────────── */
-  .pagination-row {
+  .pag {
     display: flex; align-items: center; justify-content: center;
-    gap: 12px; padding: 16px 4px 8px;
+    gap: 8px; padding: 14px 2px 6px;
   }
-  .pagination-row button {
+  .pag button {
     background: var(--surface2);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--border); color: var(--text);
-    padding: 8px 16px; border-radius: 10px; cursor: pointer;
-    font-size: 13px; font-weight: 500; font-family: inherit;
-    min-width: 72px;
-    transition: opacity 0.2s;
+    border: 1px solid var(--border); color: var(--text2);
+    padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font-size: 10px; font-weight: 500; font-family: inherit;
+    min-width: 60px; transition: border-color 0.2s;
   }
-  .pagination-row button:active { opacity: 0.6; }
-  .pagination-row button:disabled { opacity: 0.25; }
-  .pagination-row .page-info {
-    font-size: 12px; color: var(--text2); font-feature-settings: "tnum";
-    min-width: 100px; text-align: center;
+  .pag button:active { border-color: var(--text2); }
+  .pag button:disabled { opacity: 0.2; }
+  .pag .info {
+    font-size: 9px; color: var(--text3); font-feature-settings: "tnum";
+    min-width: 70px; text-align: center;
   }
 
   /* ── Lightbox ──────────────────────────────────────────────── */
-  .lightbox {
+  .lb {
     display: none; position: fixed; inset: 0; z-index: 999;
     background: rgba(0,0,0,0.95);
     align-items: center; justify-content: center;
-    padding: 0;
   }
-  .lightbox.open { display: flex; }
-  .lightbox img {
+  .lb.open { display: flex; }
+  .lb img {
     max-width: 100%; max-height: 100%; object-fit: contain;
   }
-  .lightbox .lb-close {
-    position: absolute; top: calc(12px + var(--safe-top)); right: 16px;
-    width: 36px; height: 36px; border-radius: 50%;
-    background: rgba(255,255,255,0.1);
-    border: none; color: #fff; font-size: 20px;
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: background 0.2s;
+  .lb .lb-close {
+    position: absolute; top: calc(10px + var(--safe-top)); right: 12px;
+    width: 32px; height: 32px; border-radius: 6px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    color: #fff; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-family: inherit;
   }
-  .lightbox .lb-close:active { background: rgba(255,255,255,0.2); }
-  .lightbox .lb-info {
-    position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.5); font-size: 13px;
-    background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 99px;
-    white-space: nowrap;
+  .lb .lb-close:active { background: rgba(255,255,255,0.12); }
+  .lb .lb-info {
+    position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.3); font-size: 10px;
+    background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 4px;
+    white-space: nowrap; letter-spacing: 0.04em;
   }
-  .lightbox .lb-nav {
+  .lb .lb-nav {
     position: absolute; top: 50%; transform: translateY(-50%);
-    background: rgba(255,255,255,0.06); border: none; color: #fff;
-    font-size: 24px; padding: 20px 10px; cursor: pointer;
-    border-radius: 8px; transition: background 0.2s;
+    background: rgba(255,255,255,0.04); border: none; color: #fff;
+    font-size: 18px; padding: 16px 8px; cursor: pointer;
+    border-radius: 6px;
   }
-  .lightbox .lb-nav:active { background: rgba(255,255,255,0.15); }
-  .lightbox .lb-prev { left: 8px; }
-  .lightbox .lb-next { right: 8px; }
+  .lb .lb-nav:active { background: rgba(255,255,255,0.1); }
+  .lb .lb-prev { left: 6px; }
+  .lb .lb-next { right: 6px; }
 
   /* ── Loading ───────────────────────────────────────────────── */
-  .loading {
-    text-align: center; padding: 60px 16px; color: var(--text2);
+  .load {
+    text-align: center; padding: 48px 16px; color: var(--text3);
   }
-  .loading .spinner {
-    width: 28px; height: 28px; border-radius: 50%;
-    border: 2.5px solid var(--border); border-top-color: var(--accent);
+  .load .spinner {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--accent);
     animation: spin 0.8s linear infinite;
-    margin: 0 auto 16px;
+    margin: 0 auto 12px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Desktop overrides (iPad / large screens) ──────────────── */
+  /* ── Desktop ───────────────────────────────────────────────── */
   @media (min-width: 768px) {
-    .cameras-grid {
+    .cameras {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      padding: 0 24px 80px;
+      padding: 16px 20px 32px;
     }
-    .snapshots-grid {
-      grid-template-columns: repeat(4, 1fr);
-    }
-    .sheet .sheet-body { padding: 4px 24px 12px; }
-    .header { padding: 8px 28px 20px; }
-    .status-bar { padding: 8px 28px 0; }
+    .snap-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .header { padding: 4px 24px 18px; }
+    .status { padding: 4px 24px 0; }
   }
   @media (min-width: 1024px) {
-    .cameras-grid { grid-template-columns: repeat(3, 1fr); }
-    .snapshots-grid { grid-template-columns: repeat(5, 1fr); }
+    .cameras { grid-template-columns: repeat(3, 1fr); }
+    .snap-grid { grid-template-columns: repeat(5, 1fr); }
   }
-
-  /* ── Utility ───────────────────────────────────────────────── */
-  .hidden { display: none !important; }
 </style>
 </head>
 <body>
 
-<!-- Status bar -->
-<div class="status-bar">
-  <div class="live">
-    <span class="dot"></span>
-    <span>Live</span>
+<!-- Status -->
+<div class="status">
+  <div class="sys">
+    <span class="badge"><span class="dot"></span>REC</span>
+    <span class="badge" style="background:rgba(90,200,250,0.06);border-color:rgba(90,200,250,0.1);color:var(--cyan)">ONVIF</span>
   </div>
-  <div class="counts">
+  <div class="stats">
     <span><strong id="totalCam">0</strong> cams</span>
-    <span><strong id="totalSnap">0</strong> snaps</span>
+    <span><strong id="totalSnap">0</strong> caps</span>
   </div>
 </div>
 
 <!-- Header -->
 <div class="header">
-  <h1>Cameras</h1>
+  <div class="top">
+    <h1><span class="marker"></span>Sentinel</h1>
+  </div>
   <div class="sub">
     <span id="updateTime">—</span>
   </div>
 </div>
 
 <!-- Camera grid -->
-<div id="dashboardView">
-  <div class="cameras-grid" id="camerasGrid"></div>
+<div id="dashView">
+  <div class="cameras" id="camGrid"></div>
 </div>
 
-<!-- Bottom sheet overlay -->
-<div class="sheet-overlay" id="sheetOverlay"></div>
+<!-- Sheet mask -->
+<div class="sheet-mask" id="sheetMask"></div>
 
-<!-- Bottom sheet -->
+<!-- Sheet -->
 <div class="sheet" id="sheet">
-  <div class="sheet-handle"></div>
-
-  <div class="sheet-header">
-    <h2 id="detailTitle">Camera</h2>
-    <button class="close-sheet" id="closeSheet">&times;</button>
+  <div class="grip"></div>
+  <div class="sh-head">
+    <h2><span id="detailTitle">CAM</span> <span class="ch-id" id="detailId">CH 0</span></h2>
+    <button class="close-sh" id="closeSheet">✕</button>
   </div>
-
-  <div class="sheet-controls" id="sheetControls">
-    <div class="control-group">
+  <div class="sh-tools" id="shTools">
+    <div class="tool-group">
       <label for="dateInput">Date</label>
       <input type="date" id="dateInput">
     </div>
-    <div class="control-group">
-      <label for="hourSelect">Hour</label>
+    <div class="tool-group">
+      <label for="hourSelect">Hr</label>
       <select id="hourSelect">
         <option value="">All</option>
       </select>
     </div>
-    <button class="video-chip" id="hourVideoBtn">Video</button>
-    <button class="video-chip day-chip" id="videoDayBtn">Full day</button>
+    <button class="btn-vid" id="hourVideoBtn">Record</button>
+    <button class="btn-vid day" id="videoDayBtn">24h</button>
   </div>
-
-  <div class="sheet-body" id="sheetBody">
-    <div class="stats-row" id="statsRow"></div>
-    <div class="snapshots-grid" id="snapshotsGrid"></div>
-    <div class="pagination-row" id="pagination">
-      <button id="prevPage">Previous</button>
-      <span class="page-info" id="pageInfo">Page 1 of 1</span>
+  <div class="sh-body" id="shBody">
+    <div class="stats" id="statsRow"></div>
+    <div class="snap-grid" id="snapGrid"></div>
+    <div class="pag" id="pag">
+      <button id="prevPage">Prev</button>
+      <span class="info" id="pageInfo">1 / 1</span>
       <button id="nextPage">Next</button>
     </div>
   </div>
 </div>
 
 <!-- Lightbox -->
-<div class="lightbox" id="lightbox">
-  <button class="lb-close" id="lbClose">&times;</button>
-  <button class="lb-nav lb-prev" id="lbPrev">&lsaquo;</button>
-  <button class="lb-nav lb-next" id="lbNext">&rsaquo;</button>
+<div class="lb" id="lb">
+  <button class="lb-close" id="lbClose">✕</button>
+  <button class="lb-nav lb-prev" id="lbPrev">‹</button>
+  <button class="lb-nav lb-next" id="lbNext">›</button>
   <img id="lbImg" src="" alt="">
   <div class="lb-info" id="lbInfo"></div>
 </div>
@@ -494,27 +561,22 @@ const IMG_BASE = '/snapshots/';
 
 let manifest = null;
 let selectedCameraId = null;
-let lightboxItems = [];
-let lightboxIndex = 0;
+let lbItems = [];
+let lbIndex = 0;
 
-let currentPage = 1;
+let curPage = 1;
 let pageSize = 60;
-let groupByHour = true;
-let selectedHour = null;
+let groupHour = true;
+let selHour = null;
 
-// ── Load manifest ──────────────────────────────────────────────────
 async function loadManifest() {
-  const res = await fetch(`/data/manifest.json?_=${Date.now()}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  manifest = await res.json();
+  const r = await fetch(`/data/manifest.json?_=${Date.now()}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  manifest = await r.json();
   manifest.snapshots = manifest.snapshots || {};
   for (const cam of manifest.cameras) {
     const sid = String(cam.id);
-    if (manifest.snapshots[sid]) {
-      cam._dates = Object.keys(manifest.snapshots[sid]).sort().reverse();
-    } else {
-      cam._dates = [];
-    }
+    cam._dates = (manifest.snapshots[sid] ? Object.keys(manifest.snapshots[sid]).sort().reverse() : []);
     cam._dateCounts = {};
     for (const [d, snaps] of Object.entries(manifest.snapshots[sid] || {})) {
       cam._dateCounts[d] = snaps.length;
@@ -522,106 +584,104 @@ async function loadManifest() {
   }
 }
 
-// ── Render dashboard ───────────────────────────────────────────────
 function renderDashboard() {
-  const grid = document.getElementById('camerasGrid');
+  const grid = document.getElementById('camGrid');
   grid.innerHTML = '';
   for (const cam of manifest.cameras) {
     const last = cam.last_snapshot;
     const card = document.createElement('div');
-    card.className = 'camera-card';
+    card.className = 'cam-card';
     card.dataset.camId = cam.id;
 
-    let thumbHtml;
+    let feed;
     if (last) {
       const ago = timeAgo(last.captured_at);
-      thumbHtml = `
-        <div class="thumb-wrap">
-          <img class="thumb" src="${IMG_BASE}${last.path}?_=${Date.now()}" alt="" loading="lazy">
-          <div class="last-overlay">
-            <span></span>
+      feed = `
+        <div class="feed">
+          <img src="${IMG_BASE}${last.path}?_=${Date.now()}" alt="" loading="lazy">
+          <div class="overlay"></div>
+          <span class="cam-id">CH ${cam.id}</span>
+          <span class="rec-indicator"><span class="dot"></span>Live</span>
+          <div class="info-bar">
+            <span>${formatTimeShort(last.captured_at)}</span>
             <span class="ago">${ago}</span>
           </div>
         </div>`;
     } else {
-      thumbHtml = `<div class="thumb-empty">No snapshot</div>`;
+      feed = `<div class="feed"><div class="empty">NO SIGNAL</div></div>`;
     }
 
-    const badge = cam.enabled
-      ? `<span class="badge badge-on">Active</span>`
-      : `<span class="badge badge-off">Off</span>`;
+    const chip = cam.enabled
+      ? `<span class="chip chip-on">ACTIVE</span>`
+      : `<span class="chip chip-off">OFF</span>`;
 
-    const intervalLabel = cam.interval_seconds >= 60
+    const int = cam.interval_seconds >= 60
       ? `${Math.round(cam.interval_seconds / 60)}m`
       : `${cam.interval_seconds}s`;
 
     card.innerHTML = `
-      ${thumbHtml}
-      <div class="info">
+      ${feed}
+      <div class="meta">
         <div class="left">
           <div class="name">${escHtml(cam.name)}</div>
-          <div class="meta">
-            <span class="count">${cam.total_snapshots} total</span>
-            <span>·</span>
-            <span>every ${intervalLabel}</span>
+          <div class="detail">
+            <span class="count">${cam.total_snapshots} caps</span>
+            <span class="sep">|</span>
+            <span>every ${int}</span>
           </div>
         </div>
-        ${badge}
+        ${chip}
       </div>
     `;
     card.addEventListener('click', () => openCamera(cam.id));
     grid.appendChild(card);
   }
   document.getElementById('totalCam').textContent = manifest.cameras.length;
-  let total = manifest.cameras.reduce((s, c) => s + c.total_snapshots, 0);
-  document.getElementById('totalSnap').textContent = total;
-  document.getElementById('updateTime').textContent = `Updated ${formatTime(manifest.generated_at)}`;
+  document.getElementById('totalSnap').textContent = manifest.cameras.reduce((s, c) => s + c.total_snapshots, 0);
+  document.getElementById('updateTime').textContent = `last updated ${formatTime(manifest.generated_at)}`;
 }
 
-// ── Open camera detail (bottom sheet) ─────────────────────────────
 function openCamera(camId) {
   selectedCameraId = camId;
-  currentPage = 1;
+  curPage = 1;
   const cam = manifest.cameras.find(c => c.id === camId);
   if (!cam) return;
 
-  const title = document.getElementById('detailTitle');
-  const dateInput = document.getElementById('dateInput');
-  const statsRow = document.getElementById('statsRow');
-  const grid = document.getElementById('snapshotsGrid');
+  document.getElementById('detailTitle').textContent = cam.name;
+  document.getElementById('detailId').textContent = `CH ${cam.id}`;
 
-  title.textContent = `${escHtml(cam.name)}`;
-
-  statsRow.innerHTML = `
-    <span class="stat-pill">Total <strong>${cam.total_snapshots}</strong></span>
-    <span class="stat-pill">Every <strong>${cam.interval_seconds}s</strong></span>
-    <span class="stat-pill"><strong>${cam._dates.length}</strong> days</span>
+  const sr = document.getElementById('statsRow');
+  sr.innerHTML = `
+    <span class="stat-p">TOTAL <strong>${cam.total_snapshots}</strong></span>
+    <span class="stat-p">INTV <strong>${cam.interval_seconds}s</strong></span>
+    <span class="stat-p">DAYS <strong>${cam._dates.length}</strong></span>
   `;
 
+  const di = document.getElementById('dateInput');
   const dates = cam._dates;
   if (dates.length > 0) {
-    dateInput.value = dates[0];
-    dateInput.min = dates[dates.length - 1];
-    dateInput.max = dates[0];
+    di.value = dates[0];
+    di.min = dates[dates.length - 1];
+    di.max = dates[0];
   } else {
-    dateInput.value = '';
+    di.value = '';
   }
 
-  renderSnapshots(camId, dateInput.value);
+  renderSnaps(camId, di.value);
 
-  document.getElementById('sheetOverlay').classList.add('open');
+  document.getElementById('sheetMask').classList.add('open');
   document.getElementById('sheet').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 
 function closeSheet() {
-  document.getElementById('sheetOverlay').classList.remove('open');
+  document.getElementById('sheetMask').classList.remove('open');
   document.getElementById('sheet').classList.remove('open');
   document.body.style.overflow = '';
   selectedCameraId = null;
 }
 
-function getSnapshotHour(snap) {
+function getHour(snap) {
   try {
     const raw = snap.captured_at;
     const d = new Date(raw.replace(' ', 'T'));
@@ -630,141 +690,126 @@ function getSnapshotHour(snap) {
   } catch { return '00'; }
 }
 
-function appendSnapItem(grid, snap, allItems, index) {
-  const item = document.createElement('div');
-  item.className = 'snap-item';
-  item.style.setProperty('--i', index);
-  const timeLabel = formatTimeShort(snap.captured_at);
-  item.innerHTML = `
+function appendSnap(g, snap, all, idx) {
+  const el = document.createElement('div');
+  el.className = 'snap-item';
+  el.style.setProperty('--i', idx);
+  el.innerHTML = `
     <img src="${IMG_BASE}${snap.path}" alt="" loading="lazy">
-    <div class="time-label">${timeLabel}</div>
+    <div class="stamp">${formatTimeShort(snap.captured_at)}</div>
   `;
-  item.addEventListener('click', () => openLightbox(allItems, allItems.indexOf(snap)));
-  grid.appendChild(item);
+  el.addEventListener('click', () => openLB(all, all.indexOf(snap)));
+  g.appendChild(el);
 }
 
-function updatePagination(totalItems, totalPages) {
-  document.getElementById('prevPage').disabled = currentPage <= 1;
-  document.getElementById('nextPage').disabled = currentPage >= totalPages;
-  document.getElementById('pageInfo').textContent = `${currentPage} / ${totalPages}`;
-  const row = document.getElementById('pagination');
-  row.style.display = totalPages > 1 ? 'flex' : 'none';
+function updPage(total, pages) {
+  document.getElementById('prevPage').disabled = curPage <= 1;
+  document.getElementById('nextPage').disabled = curPage >= pages;
+  document.getElementById('pageInfo').textContent = `${curPage} / ${pages}`;
+  document.getElementById('pag').style.display = pages > 1 ? 'flex' : 'none';
 }
 
-function renderSnapshots(camId, dateStr) {
-  const grid = document.getElementById('snapshotsGrid');
-  const statsRow = document.getElementById('statsRow');
+function renderSnaps(camId, dateStr) {
+  const g = document.getElementById('snapGrid');
+  const sr = document.getElementById('statsRow');
   const cam = manifest.cameras.find(c => c.id === camId);
 
-  selectedHour = document.getElementById('hourSelect').value || null;
+  selHour = document.getElementById('hourSelect').value || null;
 
   const totalForDate = cam._dateCounts[dateStr] || 0;
-  let existingStats = statsRow.querySelectorAll('.stat-pill');
-  while (existingStats.length > 3) {
-    existingStats[3].remove();
-    existingStats = statsRow.querySelectorAll('.stat-pill');
-  }
+  let es = sr.querySelectorAll('.stat-p');
+  while (es.length > 3) { es[3].remove(); es = sr.querySelectorAll('.stat-p'); }
   if (dateStr && totalForDate > 0) {
     const el = document.createElement('span');
-    el.className = 'stat-pill';
+    el.className = 'stat-p';
     el.innerHTML = `<strong>${dateStr}</strong> · ${totalForDate}`;
-    statsRow.appendChild(el);
+    sr.appendChild(el);
   }
 
   const sid = String(camId);
-  let allSnaps = (manifest.snapshots[sid] && manifest.snapshots[sid][dateStr]) || [];
+  let all = (manifest.snapshots[sid] && manifest.snapshots[sid][dateStr]) || [];
 
-  if (selectedHour) {
-    allSnaps = allSnaps.filter(s => getSnapshotHour(s) === selectedHour);
+  if (selHour) {
+    all = all.filter(s => getHour(s) === selHour);
   }
 
-  grid.innerHTML = '';
-  if (allSnaps.length === 0) {
-    grid.innerHTML = `<div class="snap-empty">No snapshots${selectedHour ? ` at ${selectedHour}:00` : ''}</div>`;
-    updatePagination(0, 1);
+  g.innerHTML = '';
+  if (all.length === 0) {
+    g.innerHTML = `<div class="snap-empty">NO CAPTURES${selHour ? ` @ ${selHour}:00` : ''}</div>`;
+    updPage(0, 1);
     return;
   }
 
-  allSnaps.sort((a, b) => a.captured_at.localeCompare(b.captured_at));
+  all.sort((a, b) => a.captured_at.localeCompare(b.captured_at));
 
-  existingStats = statsRow.querySelectorAll('.stat-pill');
-  while (existingStats.length > 4) {
-    existingStats[4].remove();
-    existingStats = statsRow.querySelectorAll('.stat-pill');
-  }
-  if (selectedHour) {
+  es = sr.querySelectorAll('.stat-p');
+  while (es.length > 4) { es[4].remove(); es = sr.querySelectorAll('.stat-p'); }
+  if (selHour) {
     const el = document.createElement('span');
-    el.className = 'stat-pill';
-    el.innerHTML = `Hour <strong>${selectedHour}:00</strong> · ${allSnaps.length}`;
-    statsRow.appendChild(el);
+    el.className = 'stat-p';
+    el.innerHTML = `HR <strong>${selHour}:00</strong> · ${all.length}`;
+    sr.appendChild(el);
   }
 
-  const totalPages = Math.max(1, Math.ceil(allSnaps.length / pageSize));
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
-  const start = (currentPage - 1) * pageSize;
-  const pageSnaps = allSnaps.slice(start, start + pageSize);
+  const pages = Math.max(1, Math.ceil(all.length / pageSize));
+  if (curPage > pages) curPage = pages;
+  if (curPage < 1) curPage = 1;
+  const start = (curPage - 1) * pageSize;
+  const page = all.slice(start, start + pageSize);
 
-  let lastHour = null;
-  pageSnaps.forEach((snap, i) => {
-    const hour = getSnapshotHour(snap);
-    if (groupByHour && hour !== lastHour) {
-      lastHour = hour;
-      const hourSnaps = allSnaps.filter(s => getSnapshotHour(s) === hour);
-      const header = document.createElement('div');
-      header.className = 'hour-group';
-      header.innerHTML = `
-        <span>${hour}:00</span>
-        <span class="hour-count">${hourSnaps.length}</span>
-        <button class="video-btn" data-hour="${hour}">Video</button>
+  let lastH = null;
+  page.forEach((s, i) => {
+    const h = getHour(s);
+    if (groupHour && h !== lastH) {
+      lastH = h;
+      const hs = all.filter(x => getHour(x) === h);
+      const hdr = document.createElement('div');
+      hdr.className = 'hour-h';
+      hdr.innerHTML = `
+        <span>${h}:00</span>
+        <span class="cnt">${hs.length}</span>
+        <button class="btn-vid-s" data-hour="${h}">REC</button>
       `;
-      grid.appendChild(header);
+      g.appendChild(hdr);
     }
-    appendSnapItem(grid, snap, allSnaps, start + i);
+    appendSnap(g, s, all, start + i);
   });
 
-  updatePagination(allSnaps.length, totalPages);
+  updPage(all.length, pages);
 
-  for (const btn of grid.querySelectorAll('.video-btn')) {
+  for (const btn of g.querySelectorAll('.btn-vid-s')) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const hour = btn.dataset.hour;
-      requestVideo(camId, dateStr, hour);
+      requestVideo(camId, dateStr, btn.dataset.hour);
     });
   }
 }
 
 // ── Lightbox ───────────────────────────────────────────────────────
-function openLightbox(items, index) {
-  lightboxItems = items;
-  lightboxIndex = index;
-  showLightboxImage();
-  document.getElementById('lightbox').classList.add('open');
+function openLB(items, index) {
+  lbItems = items;
+  lbIndex = index;
+  showLB();
+  document.getElementById('lb').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 
-function showLightboxImage() {
-  const item = lightboxItems[lightboxIndex];
+function showLB() {
+  const item = lbItems[lbIndex];
   if (!item) return;
-  const img = document.getElementById('lbImg');
-  img.src = IMG_BASE + item.path;
-  const label = formatTime(item.captured_at) + `  ·  ${(item.file_size / 1024).toFixed(0)} KB`;
-  document.getElementById('lbInfo').textContent = label;
-  document.getElementById('lbPrev').style.display = lightboxIndex > 0 ? '' : 'none';
-  document.getElementById('lbNext').style.display = lightboxIndex < lightboxItems.length - 1 ? '' : 'none';
+  document.getElementById('lbImg').src = IMG_BASE + item.path;
+  document.getElementById('lbInfo').textContent = formatTime(item.captured_at) + `  ·  ${(item.file_size / 1024).toFixed(0)} KB`;
+  document.getElementById('lbPrev').style.display = lbIndex > 0 ? '' : 'none';
+  document.getElementById('lbNext').style.display = lbIndex < lbItems.length - 1 ? '' : 'none';
 }
 
-function closeLightbox() {
-  document.getElementById('lightbox').classList.remove('open');
+function closeLB() {
+  document.getElementById('lb').classList.remove('open');
   document.body.style.overflow = '';
 }
 
-function prevLightbox() {
-  if (lightboxIndex > 0) { lightboxIndex--; showLightboxImage(); }
-}
-function nextLightbox() {
-  if (lightboxIndex < lightboxItems.length - 1) { lightboxIndex++; showLightboxImage(); }
-}
+function prevLB() { if (lbIndex > 0) { lbIndex--; showLB(); } }
+function nextLB() { if (lbIndex < lbItems.length - 1) { lbIndex++; showLB(); } }
 
 // ── Helpers ────────────────────────────────────────────────────────
 function formatTime(iso) {
@@ -772,10 +817,7 @@ function formatTime(iso) {
   try {
     const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
+    return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch { return iso; }
 }
 
@@ -784,7 +826,7 @@ function formatTimeShort(iso) {
   try {
     const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   } catch { return iso; }
 }
 
@@ -794,61 +836,58 @@ function timeAgo(iso) {
     const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
     const diff = Math.floor((Date.now() - d.getTime()) / 1000);
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
+    if (diff < 60) return `${diff}s`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    return `${Math.floor(diff / 86400)}d`;
   } catch { return iso; }
 }
 
 function escHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
-// ── Video request ──────────────────────────────────────────────────
+// ── Video ──────────────────────────────────────────────────────────
 async function requestVideo(cameraId, dateStr, hour) {
-  const label = hour ? `hour ${hour}` : `the whole day`;
-  if (!confirm(`Generate video for ${label}? This may take a moment.`)) return;
+  const label = hour ? `hour ${hour}` : '24h';
+  if (!confirm(`Generate ${label} timelapse?`)) return;
 
-  const btn = hour
-    ? document.querySelector(`.video-btn[data-hour="${hour}"]`)
-    : document.getElementById('videoDayBtn');
+  const btn = hour ? document.querySelector(`.btn-vid-s[data-hour="${hour}"]`) : document.getElementById('videoDayBtn');
   if (btn) btn.disabled = true;
 
   try {
-    const res = await fetch('/api/videos', {
+    const r = await fetch('/api/videos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ camera_id: cameraId, date: dateStr, hour: hour != null ? parseInt(hour, 10) : null }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      const detail = Array.isArray(err.detail) ? err.detail.map(e => e.msg).join('; ') : (err.detail || `HTTP ${res.status}`);
-      throw new Error(detail);
+    if (!r.ok) {
+      const err = await r.json();
+      throw new Error(Array.isArray(err.detail) ? err.detail.map(e => e.msg).join('; ') : (err.detail || `HTTP ${r.status}`));
     }
-    const data = await res.json();
+    const data = await r.json();
     window.open(data.video_url, '_blank');
   } catch (err) {
-    alert(`Video generation failed: ${err.message}`);
+    alert(`Failed: ${err.message}`);
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
-// ── Event handlers ─────────────────────────────────────────────────
+// ── Events ─────────────────────────────────────────────────────────
 document.getElementById('closeSheet').addEventListener('click', closeSheet);
-document.getElementById('sheetOverlay').addEventListener('click', closeSheet);
+document.getElementById('sheetMask').addEventListener('click', closeSheet);
 
 document.getElementById('dateInput').addEventListener('change', (e) => {
-  currentPage = 1;
-  if (selectedCameraId) renderSnapshots(selectedCameraId, e.target.value);
+  curPage = 1;
+  if (selectedCameraId) renderSnaps(selectedCameraId, e.target.value);
 });
 
 document.getElementById('hourSelect').addEventListener('change', () => {
-  currentPage = 1;
-  if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+  curPage = 1;
+  if (selectedCameraId) renderSnaps(selectedCameraId, document.getElementById('dateInput').value);
 });
 
 document.getElementById('videoDayBtn').addEventListener('click', () => {
@@ -856,72 +895,66 @@ document.getElementById('videoDayBtn').addEventListener('click', () => {
 });
 
 document.getElementById('prevPage').addEventListener('click', () => {
-  if (currentPage > 1) {
-    currentPage--;
-    if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
-  }
+  if (curPage > 1) { curPage--; if (selectedCameraId) renderSnaps(selectedCameraId, document.getElementById('dateInput').value); }
 });
 
 document.getElementById('nextPage').addEventListener('click', () => {
-  currentPage++;
-  if (selectedCameraId) renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+  curPage++; if (selectedCameraId) renderSnaps(selectedCameraId, document.getElementById('dateInput').value);
 });
 
-document.getElementById('lbClose').addEventListener('click', closeLightbox);
-document.getElementById('lbPrev').addEventListener('click', prevLightbox);
-document.getElementById('lbNext').addEventListener('click', nextLightbox);
+document.getElementById('lbClose').addEventListener('click', closeLB);
+document.getElementById('lbPrev').addEventListener('click', prevLB);
+document.getElementById('lbNext').addEventListener('click', nextLB);
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeLightbox();
-  if (document.getElementById('lightbox').classList.contains('open')) {
-    if (e.key === 'ArrowLeft') prevLightbox();
-    if (e.key === 'ArrowRight') nextLightbox();
+  if (e.key === 'Escape') closeLB();
+  if (document.getElementById('lb').classList.contains('open')) {
+    if (e.key === 'ArrowLeft') prevLB();
+    if (e.key === 'ArrowRight') nextLB();
   }
 });
 
-document.getElementById('lightbox').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeLightbox();
+document.getElementById('lb').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeLB();
 });
 
 // ── Init ───────────────────────────────────────────────────────────
-let refreshTimer = null;
-const REFRESH_INTERVAL_MS = 30000;
+let refTimer = null;
+const REF_INTERVAL = 30000;
 
-async function refreshDashboard() {
+async function refreshDash() {
   try {
     await loadManifest();
     renderDashboard();
     if (selectedCameraId) {
-      renderSnapshots(selectedCameraId, document.getElementById('dateInput').value);
+      renderSnaps(selectedCameraId, document.getElementById('dateInput').value);
     } else if (manifest.cameras.length > 0) {
       openCamera(manifest.cameras[0].id);
     }
   } catch (err) {
-    console.error('Auto-refresh failed:', err);
+    console.error('Refresh fail:', err);
   }
 }
 
-function populateHourSelect() {
+function populateHour() {
   const sel = document.getElementById('hourSelect');
   for (let h = 0; h < 24; h++) {
-    const opt = document.createElement('option');
-    opt.value = String(h).padStart(2, '0');
-    opt.textContent = `${String(h).padStart(2, '0')}:00`;
-    sel.appendChild(opt);
+    const o = document.createElement('option');
+    o.value = String(h).padStart(2, '0');
+    o.textContent = `${String(h).padStart(2, '0')}:00`;
+    sel.appendChild(o);
   }
 }
 
 (async function init() {
-  document.getElementById('camerasGrid').innerHTML =
-    `<div class="loading"><div class="spinner"></div>Loading...</div>`;
+  document.getElementById('camGrid').innerHTML = `<div class="load"><div class="spinner"></div>ACQUIRING...</div>`;
 
-  populateHourSelect();
+  populateHour();
 
   document.getElementById('hourVideoBtn').addEventListener('click', () => {
-    const hourEl = document.getElementById('hourSelect');
-    const hour = hourEl.value;
+    const h = document.getElementById('hourSelect').value;
     if (!selectedCameraId) return;
-    requestVideo(selectedCameraId, document.getElementById('dateInput').value, hour || null);
+    requestVideo(selectedCameraId, document.getElementById('dateInput').value, h || null);
   });
 
   try {
@@ -930,17 +963,12 @@ function populateHourSelect() {
     if (manifest.cameras.length > 0) {
       openCamera(manifest.cameras[0].id);
     } else {
-      document.getElementById('camerasGrid').innerHTML =
-        `<div class="snap-empty">No cameras found.</div>`;
+      document.getElementById('camGrid').innerHTML = `<div class="snap-empty">NO CAMERAS FOUND</div>`;
     }
-    refreshTimer = setInterval(refreshDashboard, REFRESH_INTERVAL_MS);
+    refTimer = setInterval(refreshDash, REF_INTERVAL);
   } catch (err) {
-    console.error('Dashboard init failed:', err);
-    document.getElementById('camerasGrid').innerHTML =
-      `<div class="snap-empty">
-        <strong>Failed to load.</strong><br>
-        ${escHtml(err.message)}
-      </div>`;
+    console.error('Init fail:', err);
+    document.getElementById('camGrid').innerHTML = `<div class="snap-empty">CONNECTION ERROR<br>${escHtml(err.message)}</div>`;
   }
 })();
 </script>
