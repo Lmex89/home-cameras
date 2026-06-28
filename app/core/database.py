@@ -41,6 +41,17 @@ async def _migrate_interval_column(conn) -> None:
     logger.info("Migration complete: interval_minutes -> interval_seconds")
 
 
+async def _migrate_archive_column(conn) -> None:
+    """Add archive_path column to snapshots table if missing."""
+    result = await conn.exec_driver_sql("PRAGMA table_info(snapshots)")
+    columns = {row["name"] for row in result.mappings().all()}
+    if "archive_path" in columns:
+        return
+    logger.warning("archive_path column missing; adding to snapshots table")
+    await conn.exec_driver_sql("ALTER TABLE snapshots ADD COLUMN archive_path TEXT")
+    logger.info("Migration complete: added archive_path to snapshots")
+
+
 async def init_db(sql_path: Path) -> None:
     """Initialize the database schema from a raw SQL file.
 
@@ -55,6 +66,7 @@ async def init_db(sql_path: Path) -> None:
         return
     async with engine.begin() as conn:
         await _migrate_interval_column(conn)
+        await _migrate_archive_column(conn)
         raw = sql_path.read_text()
         stmt_count = 0
         for statement in raw.split(";"):

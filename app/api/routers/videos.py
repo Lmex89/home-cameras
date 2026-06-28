@@ -5,11 +5,13 @@ snapshots for a selected date or hour bucket.
 """
 
 import shutil
+import zipfile
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from loguru import logger
 
 from app.api.deps import get_snapshot_service
@@ -81,6 +83,8 @@ async def create_video(
 async def download_video(filename: str):
     """Download a previously generated MP4 video by filename.
 
+    Falls back to archived ZIP storage if the raw file has been rotated.
+
     \f
     Args:
         filename: Name of the video file stored in the videos directory.
@@ -92,9 +96,24 @@ async def download_video(filename: str):
         HTTPException: 404 when the file does not exist.
     """
     path = _videos_dir() / filename
-    if not path.exists():
-        logger.warning(f"Video download: file not found {path}")
-        raise HTTPException(status_code=404, detail="Video not found")
-    size_mb = path.stat().st_size / (1024 * 1024)
-    logger.info(f"Video download: {filename} size={size_mb:.1f}MB")
-    return FileResponse(str(path), media_type="video/mp4", filename=filename)
+    if path.exists():
+        size_mb = path.stat().st_size / (1024 * 1024)
+        logger.info(f"Video download: {filename} size={size_mb:.1f}MB")
+        return FileResponse(str(path), media_type="video/mp4", filename=filename)
+
+    # Fallback: try archive
+    # Filename format: timelapse_{camera_id}_{date}_h{hour}.mp4 or timelapse_{camera_id}_{date}.mp4
+    parts = Path(filename).stem.split("_")
+    if len(parts) >= 3:
+        cam_id = parts[1]
+        date_part = parts[2]
+        zip_path = settings.archives_dir / "videos" / cam_id / f"{date_part}.zip"
+        if zip_path.exists():
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                if filename in zf.namelist():
+                    data = zf.read(filename)
+                    logger.info(f"Video download: {filename} served from archive {zip_path}")
+                    return Response(content=data, media_type="video/mp4")
+
+    logger.warning(f"Video download: file not found {path}")
+    raise HTTPException(status_code=404, detail="Video not found")

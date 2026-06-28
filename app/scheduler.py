@@ -1,13 +1,15 @@
-"""APScheduler-based snapshot capture scheduler.
+"""APScheduler-based snapshot capture and retention scheduler.
 
 Defines the shared AsyncIOScheduler and helpers to schedule, remove,
-and reschedule per-camera capture jobs at fixed intervals.
+and reschedule per-camera capture jobs at fixed intervals, as well
+as a daily retention cleanup job.
 """
 
 from datetime import datetime
 
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.core.config import settings
@@ -111,3 +113,24 @@ async def load_schedule() -> None:
             last_snap = await uow.snapshots.get_last_by_camera(cam.id)
             start_date = last_snap.captured_at if last_snap else datetime.now()
             schedule_camera(cam.id, cam.interval_seconds, start_date)
+
+
+async def retention_job() -> None:
+    """Run daily retention cleanup (zip old files, delete expired)."""
+    async with UnitOfWork(session_factory) as uow:
+        from app.application.services.retention_service import RetentionService
+        service = RetentionService(uow)
+        result = await service.run()
+        logger.info(f"Retention job complete: {result}")
+
+
+def schedule_retention() -> None:
+    """Schedule the daily retention cleanup job at 03:00."""
+    scheduler.add_job(
+        retention_job,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="retention_cleanup",
+        replace_existing=True,
+        name="Daily retention cleanup",
+    )
+    logger.info("Scheduled daily retention cleanup at 03:00")

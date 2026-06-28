@@ -13,5 +13,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - SNAPSHOT_RETENTION_DAYS=30
-      - DEFAULT_INTERVAL_MINUTES=1
+      - SNAPSHOT_ZIP_AFTER_DAYS=7
+      - VIDEO_RETENTION_DAYS=30
+      - DEFAULT_INTERVAL_SECONDS=60
     restart: unless-stopped

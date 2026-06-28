@@ -53,7 +53,7 @@ from app.core.database import init_db
 from app.api.routers import cameras, snapshots, report, videos
 from app.web import pages
 from app.seed import seed_from_yaml
-from app.scheduler import scheduler, load_schedule
+from app.scheduler import scheduler, load_schedule, schedule_retention
 
 
 @asynccontextmanager
@@ -76,6 +76,7 @@ async def lifespan(app: FastAPI):
     await seed_from_yaml(settings.yaml_path)
     scheduler.start()
     await load_schedule()
+    schedule_retention()
     logger.info(f"{settings.app_name} started")
     yield
     logger.info(f"Shutting down {settings.app_name}")

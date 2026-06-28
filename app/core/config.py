@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8004
     snapshot_retention_days: int = 30
+    snapshot_zip_after_days: int = 7
+    video_retention_days: int = 30
     default_interval_seconds: int = 60
     timezone: str = "America/Mexico_City"
 
@@ -44,6 +46,16 @@ class Settings(BaseSettings):
     def snapshots_dir(self) -> Path:
         """Return the directory where snapshot images are stored."""
         return self.data_dir / "snapshots"
+
+    @property
+    def archives_dir(self) -> Path:
+        """Return the directory where archived zips are stored."""
+        return self.data_dir / "archives"
+
+    @property
+    def videos_dir(self) -> Path:
+        """Return the directory where generated videos are stored."""
+        return self.data_dir / "videos"
 
     @property
     def db_path(self) -> Path:

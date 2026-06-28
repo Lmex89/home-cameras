@@ -1,14 +1,17 @@
 """FastAPI router for snapshot retrieval endpoints.
 
 Exposes endpoints to fetch snapshot metadata, query snapshots by date
-for a camera, and stream snapshot image files.
+for a camera, and stream snapshot image files (including from archived
+ZIP storage).
 """
 
+import zipfile
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from loguru import logger
 
 from app.api.deps import get_snapshot_service
@@ -17,6 +20,32 @@ from app.core.config import settings
 from app.domain.schemas import SnapshotRead
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
+
+
+def _read_from_archive(archive_ref: str) -> bytes:
+    """Extract a file from a ZIP archive given an archive reference.
+
+    The reference format is ``{rel_zip_path}::{filename}``, e.g.
+    ``snapshots/3/2025-06-15.zip::150322.jpg``.
+
+    Args:
+        archive_ref: Archive reference string stored in the snapshot row.
+
+    Returns:
+        The raw bytes of the extracted file.
+
+    Raises:
+        FileNotFoundError: When the archive ZIP or the file inside it
+            does not exist.
+    """
+    zip_rel, filename = archive_ref.split("::", 1)
+    zip_abs = settings.archives_dir / zip_rel
+    if not zip_abs.exists():
+        raise FileNotFoundError(f"Archive not found: {zip_abs}")
+    with zipfile.ZipFile(zip_abs, "r") as zf:
+        if filename not in zf.namelist():
+            raise FileNotFoundError(f"{filename} not found in {zip_abs}")
+        return zf.read(filename)
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotRead)
@@ -85,9 +114,22 @@ async def get_snapshot_image(
     if not snap:
         logger.warning(f"Snapshot image: snapshot {snapshot_id} not found")
         raise HTTPException(status_code=404, detail="Snapshot not found")
+
     full_path = settings.snapshots_dir / snap.image_path
-    if not full_path.exists():
-        logger.warning(f"Snapshot image file not found: {full_path}")
-        raise HTTPException(status_code=404, detail="Image file not found")
-    logger.debug(f"Serving snapshot image: {full_path}")
-    return FileResponse(str(full_path), media_type="image/jpeg")
+    if full_path.exists():
+        logger.debug(f"Serving snapshot image: {full_path}")
+        return FileResponse(str(full_path), media_type="image/jpeg")
+
+    # Try serving from archive if the raw file was rotated away
+    if snap.archive_path:
+        try:
+            data = _read_from_archive(snap.archive_path)
+            logger.debug(f"Serving snapshot {snapshot_id} from archive {snap.archive_path}")
+            return Response(content=data, media_type="image/jpeg")
+        except FileNotFoundError:
+            logger.warning(f"Archive file missing for snapshot {snapshot_id}: {snap.archive_path}")
+        except Exception as e:
+            logger.exception(f"Failed to read snapshot {snapshot_id} from archive: {e}")
+
+    logger.warning(f"Snapshot image file not found: {full_path}, archive={snap.archive_path}")
+    raise HTTPException(status_code=404, detail="Image file not found")

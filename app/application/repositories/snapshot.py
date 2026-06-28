@@ -6,7 +6,7 @@ cleanup over an async SQLAlchemy session.
 
 from datetime import date, datetime
 
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import Snapshot
@@ -178,3 +178,49 @@ class SnapshotRepository:
         )
         await self._session.flush()
         return result.rowcount
+
+    async def get_old_unarchived(self, cutoff: datetime) -> list[Snapshot]:
+        """Get snapshots older than cutoff that haven't been archived yet.
+
+        Args:
+            cutoff: The exclusive lower-bound timestamp.
+
+        Returns:
+            Snapshots ordered by camera_id then captured_at.
+        """
+        result = await self._session.execute(
+            select(Snapshot)
+            .where(Snapshot.captured_at < cutoff, Snapshot.archive_path.is_(None))
+            .order_by(Snapshot.camera_id, Snapshot.captured_at)
+        )
+        return list(result.scalars().all())
+
+    async def update_archive_path(self, snapshot_id: int, archive_path: str) -> None:
+        """Set the archive_path for a snapshot.
+
+        Args:
+            snapshot_id: The identifier of the snapshot.
+            archive_path: The archive path to store (e.g. ``snapshots/3/2025-06-15.zip::150322.jpg``).
+        """
+        await self._session.execute(
+            update(Snapshot)
+            .where(Snapshot.id == snapshot_id)
+            .values(archive_path=archive_path)
+        )
+        await self._session.flush()
+
+    async def count_by_archive_zip(self, zip_path: str) -> int:
+        """Count snapshots referencing a given archive zip.
+
+        Args:
+            zip_path: The archive zip path to match (e.g. ``snapshots/3/2025-06-15.zip``).
+
+        Returns:
+            The number of snapshots that reference this zip.
+        """
+        result = await self._session.execute(
+            select(func.count(Snapshot.id)).where(
+                Snapshot.archive_path.startswith(zip_path)
+            )
+        )
+        return result.scalar() or 0

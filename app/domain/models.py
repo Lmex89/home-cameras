@@ -68,5 +68,6 @@ class Snapshot(Base):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="success")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archive_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     camera: Mapped[Camera] = relationship("Camera", back_populates="snapshots")
