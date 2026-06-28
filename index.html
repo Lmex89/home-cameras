@@ -535,6 +535,16 @@
     </div>
     <button class="btn-vid" id="hourVideoBtn">Record</button>
     <button class="btn-vid day" id="videoDayBtn">24h</button>
+    <div class="tool-group" style="margin-left:auto">
+      <label for="pageSizeSelect">Show</label>
+      <select id="pageSizeSelect">
+        <option value="10">10</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="300">300</option>
+        <option value="0">All</option>
+      </select>
+    </div>
   </div>
   <div class="sh-body" id="shBody">
     <div class="stats" id="statsRow"></div>
@@ -716,6 +726,11 @@ function renderSnaps(camId, dateStr) {
 
   selHour = document.getElementById('hourSelect').value || null;
 
+  // Default to 10 per page when hour filter is active
+  const psEl = document.getElementById('pageSizeSelect');
+  const psVal = parseInt(psEl.value, 10);
+  pageSize = psVal > 0 ? psVal : Infinity;
+
   const totalForDate = cam._dateCounts[dateStr] || 0;
   let es = sr.querySelectorAll('.stat-p');
   while (es.length > 3) { es[3].remove(); es = sr.querySelectorAll('.stat-p'); }
@@ -886,6 +901,11 @@ document.getElementById('dateInput').addEventListener('change', (e) => {
 });
 
 document.getElementById('hourSelect').addEventListener('change', () => {
+  curPage = 1;
+  if (selectedCameraId) renderSnaps(selectedCameraId, document.getElementById('dateInput').value);
+});
+
+document.getElementById('pageSizeSelect').addEventListener('change', () => {
   curPage = 1;
   if (selectedCameraId) renderSnaps(selectedCameraId, document.getElementById('dateInput').value);
 });
