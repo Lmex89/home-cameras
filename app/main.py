@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -132,17 +132,61 @@ async def serve_dashboard_index():
 
 @app.get("/data/manifest.json")
 async def serve_manifest():
-    """Serve the dashboard manifest JSON.
+    """Serve a live-generated dashboard manifest from the database.
 
     \f
-    Returns:
-        A FileResponse serving data/manifest.json.
+    Queries cameras and snapshots on each request so the dashboard
+    always shows fresh data without a manual export step.
 
-    Raises:
-        HTTPException: 404 when the manifest has not been generated yet.
+    Returns:
+        JSON manifest with cameras, last snapshots, and per-date
+        snapshot lists.
     """
-    manifest_path = settings.data_dir / "manifest.json"
-    if not manifest_path.exists():
-        logger.warning(f"Manifest not found: {manifest_path}")
-        raise HTTPException(status_code=404, detail="Manifest not generated yet")
-    return FileResponse(str(manifest_path), media_type="application/json")
+    from app.core.database import engine
+
+    async with engine.connect() as conn:
+        cameras = []
+        for row in await conn.exec_driver_sql(
+            "SELECT id, name, host, port, interval_seconds, enabled FROM cameras WHERE enabled = 1 ORDER BY id"
+        ):
+            cam = dict(row._mapping)
+            last_row = await conn.exec_driver_sql(
+                "SELECT image_path, captured_at, file_size FROM snapshots "
+                "WHERE camera_id = ? AND status = 'success' AND image_path != '' "
+                "ORDER BY captured_at DESC LIMIT 1",
+                [cam["id"]],
+            )
+            last = last_row.mappings().first()
+            cam["last_snapshot"] = {
+                "path": last["image_path"],
+                "captured_at": last["captured_at"].isoformat() if hasattr(last["captured_at"], "isoformat") else str(last["captured_at"]),
+                "file_size": last["file_size"],
+            } if last else None
+
+            count_row = await conn.exec_driver_sql(
+                "SELECT COUNT(*) as cnt FROM snapshots WHERE camera_id = ? AND status = 'success'",
+                [cam["id"]],
+            )
+            cam["total_snapshots"] = count_row.mappings().first()["cnt"]
+            cameras.append(cam)
+
+        snapshots: dict[str, dict[str, list[dict]]] = {}
+        for row in await conn.exec_driver_sql(
+            "SELECT camera_id, image_path, captured_at, file_size FROM snapshots "
+            "WHERE status = 'success' AND image_path != '' ORDER BY camera_id, captured_at"
+        ):
+            r = dict(row._mapping)
+            cam_id = str(r["camera_id"])
+            captured = r["captured_at"]
+            d = captured.isoformat()[:10] if hasattr(captured, "isoformat") else str(captured)[:10]
+            snapshots.setdefault(cam_id, {}).setdefault(d, []).append({
+                "path": r["image_path"],
+                "captured_at": captured.isoformat() if hasattr(captured, "isoformat") else str(captured),
+                "file_size": r["file_size"],
+            })
+
+        return {
+            "generated_at": datetime.now().isoformat(),
+            "cameras": cameras,
+            "snapshots": snapshots,
+        }
