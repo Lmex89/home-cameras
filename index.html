@@ -8,8 +8,7 @@
 <title>Sentinel · Surveillance</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  @import url('https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500;600;700&display=swap');
 
   :root {
     --bg: #08080c;
@@ -25,60 +24,57 @@
     --amber: #ff9f0a;
     --cyan: #5ac8fa;
     --accent: var(--amber);
-    --radius: 10px;
+    --radius: 8px;
     --safe-top: env(safe-area-inset-top, 16px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --crt-on: rgba(255, 160, 0, 0.03);
+    --grid-gap: 8px;
   }
 
-  html { font-size: 15px; -webkit-tap-highlight-color: transparent; }
+  html { font-size: 14px; -webkit-tap-highlight-color: transparent; }
   body {
     font-family: 'Azeret Mono', 'SF Mono', 'Courier New', monospace;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
     min-height: 100dvh;
-    overflow-x: hidden;
     padding-top: var(--safe-top);
     -webkit-font-smoothing: antialiased;
     position: relative;
   }
 
-  /* ── CRT scan-line overlay ───────────────────────────────── */
   body::after {
     content: '';
     position: fixed; inset: 0; z-index: 9999;
     pointer-events: none;
     background: repeating-linear-gradient(
-      0deg,
-      transparent 0px,
-      transparent 2px,
-      rgba(0, 0, 0, 0.06) 2px,
-      rgba(0, 0, 0, 0.06) 4px
+      0deg, transparent 0px, transparent 2px,
+      rgba(0, 0, 0, 0.06) 2px, rgba(0, 0, 0, 0.06) 4px
     );
   }
 
   ::selection { background: rgba(255, 160, 0, 0.3); }
 
+  /* ── Layout ──────────────────────────────────────────────────── */
+  .app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
   /* ── Status bar ───────────────────────────────────────────── */
   .status {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 14px 0; height: 40px;
-    font-size: 10px; font-weight: 500; color: var(--text3);
+    padding: 4px 14px 0; height: 36px;
+    font-size: 9px; font-weight: 500; color: var(--text3);
     letter-spacing: 0.08em; text-transform: uppercase;
+    flex-shrink: 0;
   }
-  .status .sys {
-    display: flex; align-items: center; gap: 8px;
-  }
+  .status .sys { display: flex; align-items: center; gap: 8px; }
   .status .sys .badge {
     display: flex; align-items: center; gap: 5px;
     padding: 2px 8px; border-radius: 3px;
     background: rgba(52, 199, 89, 0.08);
     border: 1px solid rgba(52, 199, 89, 0.15);
-    color: var(--green); font-size: 9px;
+    color: var(--green); font-size: 8px;
   }
   .status .sys .badge .dot {
-    width: 5px; height: 5px; border-radius: 50%;
+    width: 4px; height: 4px; border-radius: 50%;
     background: var(--green);
     box-shadow: 0 0 6px rgba(52,199,89,0.5);
     animation: pulse-rec 1.8s ease-in-out infinite;
@@ -87,41 +83,40 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
   }
-  .status .stats {
-    display: flex; gap: 10px;
-  }
+  .status .stats { display: flex; gap: 10px; }
   .status .stats span { opacity: 0.6; }
   .status .stats strong { color: var(--text2); font-weight: 600; opacity: 1; }
 
   /* ── Header ────────────────────────────────────────────────── */
   .header {
-    padding: 2px 16px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 14px 12px; flex-shrink: 0;
     border-bottom: 1px solid var(--border);
   }
-  .header .top {
-    display: flex; align-items: center; justify-content: space-between;
-  }
   .header h1 {
-    font-size: 20px; font-weight: 700; letter-spacing: -0.01em;
-    color: var(--text);
+    font-size: 18px; font-weight: 700; letter-spacing: -0.01em;
     display: flex; align-items: center; gap: 8px;
   }
   .header h1 .marker {
-    display: inline-block; width: 3px; height: 18px;
+    display: inline-block; width: 3px; height: 16px;
     background: var(--accent); border-radius: 2px;
     box-shadow: 0 0 8px rgba(255, 160, 0, 0.3);
   }
   .header .sub {
-    font-size: 10px; color: var(--text3); margin-top: 4px;
+    font-size: 9px; color: var(--text3);
     letter-spacing: 0.05em;
-    display: flex; align-items: center; gap: 12px;
   }
 
-  /* ── Camera grid (mobile-first) ────────────────────────────── */
+  /* ── Camera grid ──────────────────────────────────────────── */
   .cameras {
-    display: flex; flex-direction: column; gap: 10px;
-    padding: 12px 12px 24px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--grid-gap);
+    padding: 10px;
+    overflow-y: auto;
+    flex: 1;
   }
+
   .cam-card {
     background: var(--surface);
     border-radius: var(--radius);
@@ -129,231 +124,254 @@
     overflow: hidden; cursor: pointer;
     position: relative;
     transition: border-color 0.25s, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    animation: feed-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: feed-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
-  .cam-card:nth-child(1) { animation-delay: 0.04s; }
-  .cam-card:nth-child(2) { animation-delay: 0.08s; }
-  .cam-card:nth-child(3) { animation-delay: 0.12s; }
-  .cam-card:nth-child(4) { animation-delay: 0.16s; }
-  .cam-card:nth-child(5) { animation-delay: 0.20s; }
-  .cam-card:nth-child(6) { animation-delay: 0.24s; }
+  .cam-card:nth-child(1) { animation-delay: 0.03s; }
+  .cam-card:nth-child(2) { animation-delay: 0.06s; }
+  .cam-card:nth-child(3) { animation-delay: 0.09s; }
+  .cam-card:nth-child(4) { animation-delay: 0.12s; }
+  .cam-card:nth-child(5) { animation-delay: 0.15s; }
+  .cam-card:nth-child(6) { animation-delay: 0.18s; }
 
   @keyframes feed-in {
-    from { opacity: 0; transform: translateY(18px) scale(0.97); }
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
-  .cam-card:active { border-color: var(--accent); transform: scale(0.98); }
+  .cam-card:active { border-color: var(--accent); transform: scale(0.97); }
 
-  .cam-card .feed {
-    position: relative; width: 100%;
-  }
+  .cam-card .feed { position: relative; width: 100%; overflow: hidden; }
   .cam-card .feed img {
-    width: 100%; aspect-ratio: 16/9; object-fit: cover;
+    width: 100%; aspect-ratio: 4/3; object-fit: cover;
     display: block; background: var(--surface2);
     filter: contrast(1.05) saturate(0.85);
+    transition: filter 0.3s;
   }
+  .cam-card:hover .feed img { filter: contrast(1.1) saturate(0.9); }
   .cam-card .feed .empty {
-    width: 100%; aspect-ratio: 16/9;
+    width: 100%; aspect-ratio: 4/3;
     display: flex; align-items: center; justify-content: center;
     background: var(--surface2); color: var(--text3);
-    font-size: 11px; letter-spacing: 0.05em;
+    font-size: 10px; letter-spacing: 0.05em;
   }
   .cam-card .feed .overlay {
     position: absolute; inset: 0;
-    background: linear-gradient(
-      180deg,
-      transparent 50%,
-      rgba(0, 0, 0, 0.6) 92%,
-      rgba(0, 0, 0, 0.9) 100%
-    );
+    background: linear-gradient(180deg, transparent 55%, rgba(0,0,0,0.7) 95%);
     pointer-events: none;
   }
   .cam-card .feed .info-bar {
     position: absolute; bottom: 0; left: 0; right: 0;
-    display: flex; justify-content: space-between; align-items: flex-end;
-    padding: 2.5rem 10px 7px 10px;
-    font-size: 9px; color: rgba(255, 255, 255, 0.55);
+    display: flex; justify-content: space-between;
+    padding: 2rem 8px 5px 8px;
+    font-size: 8px; color: rgba(255, 255, 255, 0.5);
     letter-spacing: 0.04em;
     pointer-events: none;
   }
-  .cam-card .feed .info-bar .ago {
-    color: var(--green);
-    font-weight: 600;
-  }
-
-  /* Camera ID badge on feed */
+  .cam-card .feed .info-bar .ago { color: var(--green); font-weight: 600; }
   .cam-card .feed .cam-id {
-    position: absolute; top: 6px; left: 6px;
-    font-size: 8px; font-weight: 600; letter-spacing: 0.08em;
-    padding: 2px 6px; border-radius: 2px;
+    position: absolute; top: 4px; left: 4px;
+    font-size: 7px; font-weight: 600; letter-spacing: 0.08em;
+    padding: 1px 5px; border-radius: 2px;
     background: rgba(0, 0, 0, 0.55);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.4);
   }
   .cam-card .feed .rec-indicator {
-    position: absolute; top: 6px; right: 6px;
-    display: flex; align-items: center; gap: 4px;
-    font-size: 8px; font-weight: 600; letter-spacing: 0.06em;
-    padding: 2px 7px; border-radius: 2px;
+    position: absolute; top: 4px; right: 4px;
+    display: flex; align-items: center; gap: 3px;
+    font-size: 7px; font-weight: 600; letter-spacing: 0.06em;
+    padding: 1px 6px; border-radius: 2px;
     background: rgba(255, 59, 48, 0.12);
     border: 1px solid rgba(255, 59, 48, 0.2);
     color: var(--red);
     text-transform: uppercase;
   }
   .cam-card .feed .rec-indicator .dot {
-    width: 4px; height: 4px; border-radius: 50%;
+    width: 3px; height: 3px; border-radius: 50%;
     background: var(--red);
     animation: pulse-rec 1.2s ease-in-out infinite;
   }
 
   .cam-card .meta {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 12px 11px;
+    padding: 7px 10px 8px;
   }
   .cam-card .meta .left { min-width: 0; }
   .cam-card .meta .name {
-    font-size: 12px; font-weight: 600; letter-spacing: 0.01em;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .cam-card .meta .detail {
-    font-size: 10px; color: var(--text2); margin-top: 1px;
-    display: flex; align-items: center; gap: 6px;
-    font-weight: 400;
+    font-size: 9px; color: var(--text2); margin-top: 1px;
+    display: flex; align-items: center; gap: 5px;
   }
   .cam-card .meta .detail .sep { opacity: 0.3; }
   .cam-card .meta .chip {
-    font-size: 9px; font-weight: 500; padding: 3px 8px;
-    border-radius: 3px; flex-shrink: 0;
+    font-size: 8px; font-weight: 500; padding: 2px 7px;
+    border-radius: 2px; flex-shrink: 0;
     letter-spacing: 0.03em;
   }
   .chip-on { background: rgba(52, 199, 89, 0.08); color: var(--green); border: 1px solid rgba(52,199,89,0.12); }
   .chip-off { background: rgba(255, 59, 48, 0.08); color: var(--red); border: 1px solid rgba(255,59,48,0.12); }
 
-  /* ── Bottom sheet ──────────────────────────────────────────── */
-  .sheet-mask {
-    display: none; position: fixed; inset: 0; z-index: 200;
-    background: rgba(0, 0, 0, 0.5);
-    animation: mask-in 0.2s ease;
+  /* ── Desktop layout ──────────────────────────────────────────── */
+  @media (min-width: 700px) {
+    .app { flex-direction: row; }
+    .cameras { grid-template-columns: repeat(3, 1fr); padding: 12px; }
+    .header { padding: 2px 16px 10px; }
+    .status { padding: 4px 16px 0; }
   }
-  .sheet-mask.open { display: block; }
-  @keyframes mask-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (min-width: 960px) {
+    .cameras { grid-template-columns: repeat(4, 1fr); padding: 14px; }
+  }
+  @media (min-width: 1280px) {
+    .cameras { grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 16px; }
+  }
+  @media (min-width: 1800px) {
+    .cameras { grid-template-columns: repeat(6, 1fr); }
+  }
 
-  .sheet {
+  /* ── Panel (replaces bottom sheet on desktop) ─────────────────── */
+  .panel-mask {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.4);
+  }
+  .panel-mask.open { display: block; }
+
+  .panel {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 201;
-    background: rgba(12, 12, 16, 0.97);
-    border-radius: 14px 14px 0 0;
+    background: rgba(12,12,16,0.98);
+    border-radius: 12px 12px 0 0;
     border-top: 1px solid var(--border);
-    padding: 0 0 var(--safe-bottom);
-    max-height: 90vh; max-height: 90dvh;
+    max-height: 88vh; max-height: 88dvh;
     display: flex; flex-direction: column;
     transform: translateY(100%);
-    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    padding-bottom: var(--safe-bottom);
   }
-  .sheet.open { transform: translateY(0); }
+  .panel.open { transform: translateY(0); }
 
-  .sheet .grip {
-    width: 32px; height: 4px; border-radius: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 8px auto 0; flex-shrink: 0;
+  .panel .grip {
+    width: 30px; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,0.1);
+    margin: 7px auto 0; flex-shrink: 0;
   }
-  .sheet .sh-head {
+  .panel .p-head {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px 4px; flex-shrink: 0;
+    padding: 8px 14px 2px; flex-shrink: 0;
   }
-  .sheet .sh-head h2 {
-    font-size: 14px; font-weight: 600; letter-spacing: 0.01em;
+  .panel .p-head h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
     display: flex; align-items: center; gap: 8px;
   }
-  .sheet .sh-head h2 .ch-id {
-    font-size: 10px; font-weight: 500;
-    color: var(--text2); letter-spacing: 0.06em;
-  }
-  .sheet .sh-head .close-sh {
-    width: 28px; height: 28px; border-radius: 6px;
+  .panel .p-head h2 .ch-id { font-size: 9px; font-weight: 500; color: var(--text2); letter-spacing: 0.06em; }
+  .panel .p-head .close-p {
+    width: 26px; height: 26px; border-radius: 5px;
     background: transparent; border: 1px solid var(--border);
-    color: var(--text2); font-size: 14px; cursor: pointer;
+    color: var(--text2); font-size: 13px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     font-family: inherit; transition: border-color 0.2s;
   }
-  .sheet .sh-head .close-sh:active { border-color: var(--text2); }
+  .panel .p-head .close-p:active { border-color: var(--text2); }
 
-  .sheet .sh-tools {
-    display: flex; gap: 6px; padding: 6px 16px 8px;
+  .panel .p-tools {
+    display: flex; gap: 5px; padding: 4px 14px 6px;
     overflow-x: auto; flex-shrink: 0;
-    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
-  .sheet .sh-tools::-webkit-scrollbar { display: none; }
+  .panel .p-tools::-webkit-scrollbar { display: none; }
 
-  .sheet .tool-group {
-    display: flex; align-items: center; gap: 4px;
+  .panel .tool-group {
+    display: flex; align-items: center; gap: 3px;
     background: var(--surface2);
-    border-radius: 6px; padding: 3px 5px 3px 8px;
+    border-radius: 5px; padding: 2px 4px 2px 7px;
     flex-shrink: 0; border: 1px solid var(--border);
   }
-  .sheet .tool-group label {
-    font-size: 9px; color: var(--text3); font-weight: 500;
+  .panel .tool-group label {
+    font-size: 8px; color: var(--text3); font-weight: 500;
     letter-spacing: 0.04em; text-transform: uppercase;
   }
-  .sheet .tool-group input[type="date"],
-  .sheet .tool-group select {
+  .panel .tool-group input[type="date"],
+  .panel .tool-group select {
     background: transparent; border: none; color: var(--text);
-    font-size: 11px; font-weight: 500; padding: 3px 2px 3px 0;
+    font-size: 10px; font-weight: 500; padding: 2px 2px 2px 0;
     -webkit-appearance: none; appearance: none; outline: none;
     font-family: inherit;
   }
-  .sheet .tool-group input[type="date"] { min-width: 100px; }
-  .sheet .tool-group select { min-width: 36px; padding-right: 14px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4' fill='%23555555'%3E%3Cpath d='M0 0l3.5 4 3.5-4z'/%3E%3C/svg%3E") no-repeat right center; }
+  .panel .tool-group input[type="date"] { min-width: 90px; }
+  .panel .tool-group select { min-width: 32px; padding-right: 12px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4' fill='%23555555'%3E%3Cpath d='M0 0l3 4 3-4z'/%3E%3C/svg%3E") no-repeat right center; }
 
-  .sheet .btn-vid {
-    background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.15);
-    color: var(--red); font-size: 9px; font-weight: 600;
-    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+  .panel .btn-vid {
+    background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.15);
+    color: var(--red); font-size: 8px; font-weight: 600;
+    padding: 4px 8px; border-radius: 5px; cursor: pointer;
     flex-shrink: 0; font-family: inherit; letter-spacing: 0.04em;
     text-transform: uppercase; white-space: nowrap;
     transition: background 0.2s;
   }
-  .sheet .btn-vid:active { background: rgba(255, 59, 48, 0.2); }
-  .sheet .btn-vid:disabled { opacity: 0.3; }
-  .sheet .btn-vid.day {
-    background: rgba(255, 160, 0, 0.08); border-color: rgba(255, 160, 0, 0.15);
+  .panel .btn-vid:active { background: rgba(255,59,48,0.2); }
+  .panel .btn-vid:disabled { opacity: 0.3; }
+  .panel .btn-vid.day {
+    background: rgba(255,160,0,0.08); border-color: rgba(255,160,0,0.15);
     color: var(--amber);
   }
-  .sheet .btn-vid.day:active { background: rgba(255, 160, 0, 0.16); }
 
-  .sheet .sh-body {
+  .panel .p-body {
     flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: 2px 12px 8px;
+    padding: 0 10px 6px;
   }
 
   /* ── Stats ─────────────────────────────────────────────────── */
-  .stats {
-    display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap;
+  .p-stats {
+    display: flex; gap: 3px; margin-bottom: 8px; flex-wrap: wrap;
   }
   .stat-p {
     background: var(--surface2);
-    padding: 4px 8px; border-radius: 4px;
-    font-size: 9px; color: var(--text3);
+    padding: 3px 7px; border-radius: 3px;
+    font-size: 8px; color: var(--text3);
     border: 1px solid var(--border);
     letter-spacing: 0.03em; font-feature-settings: "tnum";
   }
   .stat-p strong { color: var(--text2); font-weight: 600; }
 
+  /* ── Preview ───────────────────────────────────────────────── */
+  .p-preview {
+    position: relative; width: 100%; margin-bottom: 8px;
+    border-radius: 5px; overflow: hidden;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: none;
+  }
+  .p-preview.has-image { display: block; }
+  .p-preview img {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+    filter: contrast(1.05) saturate(0.85);
+  }
+  .p-preview .preview-info {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent 30%, rgba(0,0,0,0.85));
+    padding: 2rem 8px 5px 8px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    font-size: 8px; color: rgba(255,255,255,0.5);
+    letter-spacing: 0.04em;
+  }
+  .p-preview .preview-info .ago { color: var(--green); font-weight: 600; }
+
   /* ── Snapshots grid ────────────────────────────────────────── */
   .snap-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 4px;
+    gap: 3px;
   }
   .snap-item {
-    aspect-ratio: 16/9; border-radius: 4px; overflow: hidden;
+    aspect-ratio: 16/9; border-radius: 3px; overflow: hidden;
     cursor: pointer; position: relative;
     background: var(--surface2);
     border: 1px solid transparent;
     transition: border-color 0.2s;
     animation: snap-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-    animation-delay: calc(var(--i, 0) * 12ms);
+    animation-delay: calc(var(--i, 0) * 10ms);
   }
   @keyframes snap-in {
     from { opacity: 0; transform: scale(0.94); }
@@ -366,80 +384,84 @@
   .snap-item .stamp {
     position: absolute; bottom: 0; left: 0; right: 0;
     background: linear-gradient(transparent 40%, rgba(0,0,0,0.8));
-    padding: 1rem 4px 3px 4px;
-    font-size: 8px; text-align: right; color: rgba(255,255,255,0.5);
+    padding: 0.8rem 3px 2px 3px;
+    font-size: 7px; text-align: right; color: rgba(255,255,255,0.4);
     font-weight: 500; letter-spacing: 0.04em;
   }
   .snap-empty {
-    grid-column: 1 / -1; text-align: center; padding: 32px 12px;
-    color: var(--text3); font-size: 11px; letter-spacing: 0.04em;
+    grid-column: 1 / -1; text-align: center; padding: 24px 12px;
+    color: var(--text3); font-size: 10px; letter-spacing: 0.04em;
   }
 
-  /* ── Sheet preview ─────────────────────────────────────────── */
-  .sh-preview {
-    position: relative; width: 100%; margin-bottom: 10px;
-    border-radius: 6px; overflow: hidden;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    display: none;
+  @media (min-width: 700px) {
+    .snap-grid { grid-template-columns: repeat(4, 1fr); gap: 4px; }
   }
-  .sh-preview.has-image { display: block; }
-  .sh-preview img {
-    width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
-    filter: contrast(1.05) saturate(0.85);
+  @media (min-width: 960px) {
+    .snap-grid { grid-template-columns: repeat(5, 1fr); }
   }
-  .sh-preview .preview-info {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    background: linear-gradient(transparent 30%, rgba(0,0,0,0.85));
-    padding: 2.5rem 10px 6px 10px;
-    display: flex; justify-content: space-between; align-items: flex-end;
-    font-size: 9px; color: rgba(255,255,255,0.5);
-    letter-spacing: 0.04em;
-  }
-  .sh-preview .preview-info .ago { color: var(--green); font-weight: 600; }
 
   /* ── Hour headers ──────────────────────────────────────────── */
   .hour-h {
     grid-column: 1 / -1;
-    display: flex; align-items: center; gap: 6px;
-    padding: 12px 2px 3px; margin-top: 2px;
-    font-size: 10px; font-weight: 600; color: var(--accent);
+    display: flex; align-items: center; gap: 5px;
+    padding: 10px 2px 2px; margin-top: 2px;
+    font-size: 9px; font-weight: 600; color: var(--accent);
     letter-spacing: 0.06em; text-transform: uppercase;
     border-bottom: 1px solid var(--border);
   }
   .hour-h:first-child { padding-top: 2px; margin-top: 0; }
   .hour-h .cnt {
-    font-size: 8px; font-weight: 500; color: var(--text3);
-    background: var(--surface2); padding: 1px 6px; border-radius: 2px;
+    font-size: 7px; font-weight: 500; color: var(--text3);
+    background: var(--surface2); padding: 1px 5px; border-radius: 2px;
   }
   .hour-h .btn-vid-s {
     margin-left: auto;
-    background: rgba(255, 59, 48, 0.08); border: 1px solid rgba(255, 59, 48, 0.12);
-    color: var(--red); padding: 2px 7px; border-radius: 3px; cursor: pointer;
-    font-size: 8px; font-weight: 600; font-family: inherit;
+    background: rgba(255,59,48,0.08); border: 1px solid rgba(255,59,48,0.12);
+    color: var(--red); padding: 1px 6px; border-radius: 2px; cursor: pointer;
+    font-size: 7px; font-weight: 600; font-family: inherit;
     letter-spacing: 0.04em; text-transform: uppercase;
     transition: background 0.2s;
   }
-  .hour-h .btn-vid-s:active { background: rgba(255, 59, 48, 0.16); }
+  .hour-h .btn-vid-s:active { background: rgba(255,59,48,0.16); }
   .hour-h .btn-vid-s:disabled { opacity: 0.3; }
 
   /* ── Pagination ────────────────────────────────────────────── */
   .pag {
     display: flex; align-items: center; justify-content: center;
-    gap: 8px; padding: 14px 2px 6px;
+    gap: 6px; padding: 10px 2px 4px;
   }
   .pag button {
     background: var(--surface2);
     border: 1px solid var(--border); color: var(--text2);
-    padding: 6px 12px; border-radius: 6px; cursor: pointer;
-    font-size: 10px; font-weight: 500; font-family: inherit;
-    min-width: 60px; transition: border-color 0.2s;
+    padding: 4px 10px; border-radius: 5px; cursor: pointer;
+    font-size: 9px; font-weight: 500; font-family: inherit;
+    min-width: 50px; transition: border-color 0.2s;
   }
   .pag button:active { border-color: var(--text2); }
   .pag button:disabled { opacity: 0.2; }
   .pag .info {
-    font-size: 9px; color: var(--text3); font-feature-settings: "tnum";
-    min-width: 70px; text-align: center;
+    font-size: 8px; color: var(--text3); font-feature-settings: "tnum";
+    min-width: 60px; text-align: center;
+  }
+
+  /* ── Desktop panel variant ─────────────────────────────────── */
+  @media (min-width: 960px) {
+    .panel-mask { display: none !important; }
+    .panel {
+      position: relative; bottom: auto; left: auto; right: auto;
+      transform: none;
+      max-height: none;
+      width: 420px;
+      min-width: 420px;
+      border-radius: 0;
+      border-top: none;
+      border-left: 1px solid var(--border);
+      padding-bottom: 0;
+      flex-shrink: 0;
+    }
+    .panel .grip { display: none; }
+    .panel .p-head { padding: 10px 14px 2px; }
+    .panel .p-body { padding: 0 12px 12px; }
   }
 
   /* ── Lightbox ──────────────────────────────────────────────── */
@@ -449,29 +471,27 @@
     align-items: center; justify-content: center;
   }
   .lb.open { display: flex; }
-  .lb img {
-    max-width: 100%; max-height: 100%; object-fit: contain;
-  }
+  .lb img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .lb .lb-close {
     position: absolute; top: calc(10px + var(--safe-top)); right: 12px;
-    width: 32px; height: 32px; border-radius: 6px;
+    width: 30px; height: 30px; border-radius: 5px;
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
-    color: #fff; font-size: 16px; cursor: pointer;
+    color: #fff; font-size: 15px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     font-family: inherit;
   }
   .lb .lb-close:active { background: rgba(255,255,255,0.12); }
   .lb .lb-info {
-    position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.3); font-size: 10px;
-    background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 4px;
+    position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.3); font-size: 9px;
+    background: rgba(0,0,0,0.5); padding: 3px 10px; border-radius: 3px;
     white-space: nowrap; letter-spacing: 0.04em;
   }
   .lb .lb-nav {
     position: absolute; top: 50%; transform: translateY(-50%);
     background: rgba(255,255,255,0.04); border: none; color: #fff;
-    font-size: 18px; padding: 16px 8px; cursor: pointer;
-    border-radius: 6px;
+    font-size: 16px; padding: 14px 7px; cursor: pointer;
+    border-radius: 5px;
   }
   .lb .lb-nav:active { background: rgba(255,255,255,0.1); }
   .lb .lb-prev { left: 6px; }
@@ -480,106 +500,83 @@
   /* ── Loading ───────────────────────────────────────────────── */
   .load {
     text-align: center; padding: 48px 16px; color: var(--text3);
+    grid-column: 1 / -1;
   }
   .load .spinner {
-    width: 20px; height: 20px; border-radius: 50%;
+    width: 18px; height: 18px; border-radius: 50%;
     border: 2px solid var(--border); border-top-color: var(--accent);
     animation: spin 0.8s linear infinite;
-    margin: 0 auto 12px;
+    margin: 0 auto 10px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ── Desktop ───────────────────────────────────────────────── */
-  @media (min-width: 768px) {
-    .cameras {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      padding: 16px 20px 32px;
-    }
-    .snap-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
-    .header { padding: 4px 24px 18px; }
-    .status { padding: 4px 24px 0; }
-  }
-  @media (min-width: 1024px) {
-    .cameras { grid-template-columns: repeat(3, 1fr); }
-    .snap-grid { grid-template-columns: repeat(5, 1fr); }
-  }
 </style>
 </head>
 <body>
 
-<!-- Status -->
-<div class="status">
-  <div class="sys">
-    <span class="badge"><span class="dot"></span>REC</span>
-    <span class="badge" style="background:rgba(90,200,250,0.06);border-color:rgba(90,200,250,0.1);color:var(--cyan)">ONVIF</span>
-  </div>
-  <div class="stats">
-    <span><strong id="totalCam">0</strong> cams</span>
-    <span><strong id="totalSnap">0</strong> caps</span>
-  </div>
-</div>
-
-<!-- Header -->
-<div class="header">
-  <div class="top">
-    <h1><span class="marker"></span>Sentinel</h1>
-  </div>
-  <div class="sub">
-    <span id="updateTime">—</span>
-  </div>
-</div>
-
-<!-- Camera grid -->
-<div id="dashView">
-  <div class="cameras" id="camGrid"></div>
-</div>
-
-<!-- Sheet mask -->
-<div class="sheet-mask" id="sheetMask"></div>
-
-<!-- Sheet -->
-<div class="sheet" id="sheet">
-  <div class="grip"></div>
-  <div class="sh-head">
-    <h2><span id="detailTitle">CAM</span> <span class="ch-id" id="detailId">CH 0</span></h2>
-    <button class="close-sh" id="closeSheet">✕</button>
-  </div>
-  <div class="sh-tools" id="shTools">
-    <div class="tool-group">
-      <label for="dateInput">Date</label>
-      <input type="date" id="dateInput">
+<div class="app" id="app">
+  <!-- Left column: status + grid -->
+  <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+    <div class="status">
+      <div class="sys">
+        <span class="badge"><span class="dot"></span>REC</span>
+        <span class="badge" style="background:rgba(90,200,250,0.06);border-color:rgba(90,200,250,0.1);color:var(--cyan)">ONVIF</span>
+      </div>
+      <div class="stats">
+        <span><strong id="totalCam">0</strong> cams</span>
+        <span><strong id="totalSnap">0</strong> caps</span>
+      </div>
     </div>
-    <div class="tool-group">
-      <label for="hourSelect">Hr</label>
-      <select id="hourSelect">
-        <option value="">All</option>
-      </select>
+    <div class="header">
+      <h1><span class="marker"></span>Sentinel</h1>
+      <div class="sub" id="updateTime">—</div>
     </div>
-    <button class="btn-vid" id="hourVideoBtn">Record</button>
-    <button class="btn-vid day" id="videoDayBtn">24h</button>
-    <div class="tool-group" style="margin-left:auto">
-      <label for="pageSizeSelect">Show</label>
-      <select id="pageSizeSelect">
-        <option value="10">10</option>
-        <option value="50">50</option>
-        <option value="100">100</option>
-        <option value="300">300</option>
-        <option value="0">All</option>
-      </select>
-    </div>
+    <div class="cameras" id="camGrid"></div>
   </div>
-  <div class="sh-body" id="shBody">
-    <div class="sh-preview" id="shPreview">
-      <img id="previewImg" src="" alt="">
-      <div class="preview-info" id="previewInfo"></div>
+
+  <!-- Panel (sheet on mobile, side panel on desktop) -->
+  <div class="panel-mask" id="panelMask"></div>
+  <div class="panel" id="panel">
+    <div class="grip"></div>
+    <div class="p-head">
+      <h2><span id="detailTitle">CAM</span> <span class="ch-id" id="detailId">CH 0</span></h2>
+      <button class="close-p" id="closePanel">✕</button>
     </div>
-    <div class="stats" id="statsRow"></div>
-    <div class="snap-grid" id="snapGrid"></div>
-    <div class="pag" id="pag">
-      <button id="prevPage">Prev</button>
-      <span class="info" id="pageInfo">1 / 1</span>
-      <button id="nextPage">Next</button>
+    <div class="p-tools" id="panelTools">
+      <div class="tool-group">
+        <label for="dateInput">Date</label>
+        <input type="date" id="dateInput">
+      </div>
+      <div class="tool-group">
+        <label for="hourSelect">Hr</label>
+        <select id="hourSelect">
+          <option value="">All</option>
+        </select>
+      </div>
+      <button class="btn-vid" id="hourVideoBtn">Record</button>
+      <button class="btn-vid day" id="videoDayBtn">24h</button>
+      <div class="tool-group" style="margin-left:auto">
+        <label for="pageSizeSelect">Show</label>
+        <select id="pageSizeSelect">
+          <option value="10">10</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="300">300</option>
+          <option value="0">All</option>
+        </select>
+      </div>
+    </div>
+    <div class="p-body" id="panelBody">
+      <div class="p-preview" id="panelPreview">
+        <img id="previewImg" src="" alt="">
+        <div class="preview-info" id="previewInfo"></div>
+      </div>
+      <div class="p-stats" id="statsRow"></div>
+      <div class="snap-grid" id="snapGrid"></div>
+      <div class="pag" id="pag">
+        <button id="prevPage">Prev</button>
+        <span class="info" id="pageInfo">1 / 1</span>
+        <button id="nextPage">Next</button>
+      </div>
     </div>
   </div>
 </div>
@@ -595,12 +592,10 @@
 
 <script>
 const IMG_BASE = '/snapshots/';
-
 let manifest = null;
 let selectedCameraId = null;
 let lbItems = [];
 let lbIndex = 0;
-
 let curPage = 1;
 let pageSize = 60;
 let groupHour = true;
@@ -704,8 +699,7 @@ function openCamera(camId) {
     di.value = '';
   }
 
-  // Populate preview with last snapshot
-  const preview = document.getElementById('shPreview');
+  const preview = document.getElementById('panelPreview');
   const previewImg = document.getElementById('previewImg');
   const previewInfo = document.getElementById('previewInfo');
   const last = cam.last_snapshot;
@@ -719,14 +713,15 @@ function openCamera(camId) {
 
   renderSnaps(camId, di.value);
 
-  document.getElementById('sheetMask').classList.add('open');
-  document.getElementById('sheet').classList.add('open');
-  document.body.style.overflow = 'hidden';
+  const isDesktop = window.innerWidth >= 960;
+  document.getElementById('panelMask').classList.toggle('open', !isDesktop);
+  document.getElementById('panel').classList.add('open');
+  if (!isDesktop) document.body.style.overflow = 'hidden';
 }
 
-function closeSheet() {
-  document.getElementById('sheetMask').classList.remove('open');
-  document.getElementById('sheet').classList.remove('open');
+function closePanel() {
+  document.getElementById('panelMask').classList.remove('open');
+  document.getElementById('panel').classList.remove('open');
   document.body.style.overflow = '';
   selectedCameraId = null;
 }
@@ -766,7 +761,6 @@ function renderSnaps(camId, dateStr) {
 
   selHour = document.getElementById('hourSelect').value || null;
 
-  // Default to 10 per page when hour filter is active
   const psEl = document.getElementById('pageSizeSelect');
   const psVal = parseInt(psEl.value, 10);
   pageSize = psVal > 0 ? psVal : Infinity;
@@ -872,7 +866,7 @@ function formatTime(iso) {
   try {
     const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
   } catch { return iso; }
 }
 
@@ -881,7 +875,7 @@ function formatTimeShort(iso) {
   try {
     const d = new Date(iso.replace(' ', 'T'));
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
   } catch { return iso; }
 }
 
@@ -920,7 +914,7 @@ async function requestVideo(cameraId, dateStr, hour) {
     });
     if (!r.ok) {
       const err = await r.json();
-      throw new Error(Array.isArray(err.detail) ? err.detail.map(e => e.msg).join('; ') : (err.detail || `HTTP ${r.status}`));
+      throw new Error(Array.isArray(err.detail) ? err.detail.map(e=>e.msg).join('; ') : (err.detail || `HTTP ${r.status}`));
     }
     const data = await r.json();
     window.open(data.video_url, '_blank');
@@ -932,8 +926,8 @@ async function requestVideo(cameraId, dateStr, hour) {
 }
 
 // ── Events ─────────────────────────────────────────────────────────
-document.getElementById('closeSheet').addEventListener('click', closeSheet);
-document.getElementById('sheetMask').addEventListener('click', closeSheet);
+document.getElementById('closePanel').addEventListener('click', closePanel);
+document.getElementById('panelMask').addEventListener('click', closePanel);
 
 document.getElementById('dateInput').addEventListener('change', (e) => {
   curPage = 1;
@@ -978,6 +972,22 @@ document.getElementById('lb').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeLB();
 });
 
+// ── Window resize: toggle panel mode ────────────────────────────────
+let prevDesktop = null;
+function checkPanelMode() {
+  const isDesktop = window.innerWidth >= 960;
+  if (isDesktop === prevDesktop) return;
+  prevDesktop = isDesktop;
+  const panel = document.getElementById('panel');
+  const mask = document.getElementById('panelMask');
+  if (isDesktop) {
+    mask.classList.remove('open');
+    document.body.style.overflow = '';
+    if (selectedCameraId) panel.classList.add('open');
+  }
+}
+window.addEventListener('resize', checkPanelMode);
+
 // ── Init ───────────────────────────────────────────────────────────
 let refTimer = null;
 const REF_INTERVAL = 30000;
@@ -1014,6 +1024,7 @@ function populateHour() {
   document.getElementById('camGrid').innerHTML = `<div class="load"><div class="spinner"></div>ACQUIRING...</div>`;
 
   populateHour();
+  prevDesktop = window.innerWidth >= 960;
 
   document.getElementById('hourVideoBtn').addEventListener('click', () => {
     const h = document.getElementById('hourSelect').value;
