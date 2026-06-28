@@ -375,6 +375,29 @@
     color: var(--text3); font-size: 11px; letter-spacing: 0.04em;
   }
 
+  /* ── Sheet preview ─────────────────────────────────────────── */
+  .sh-preview {
+    position: relative; width: 100%; margin-bottom: 10px;
+    border-radius: 6px; overflow: hidden;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: none;
+  }
+  .sh-preview.has-image { display: block; }
+  .sh-preview img {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+    filter: contrast(1.05) saturate(0.85);
+  }
+  .sh-preview .preview-info {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent 30%, rgba(0,0,0,0.85));
+    padding: 2.5rem 10px 6px 10px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    font-size: 9px; color: rgba(255,255,255,0.5);
+    letter-spacing: 0.04em;
+  }
+  .sh-preview .preview-info .ago { color: var(--green); font-weight: 600; }
+
   /* ── Hour headers ──────────────────────────────────────────── */
   .hour-h {
     grid-column: 1 / -1;
@@ -547,6 +570,10 @@
     </div>
   </div>
   <div class="sh-body" id="shBody">
+    <div class="sh-preview" id="shPreview">
+      <img id="previewImg" src="" alt="">
+      <div class="preview-info" id="previewInfo"></div>
+    </div>
     <div class="stats" id="statsRow"></div>
     <div class="snap-grid" id="snapGrid"></div>
     <div class="pag" id="pag">
@@ -675,6 +702,19 @@ function openCamera(camId) {
     di.max = dates[0];
   } else {
     di.value = '';
+  }
+
+  // Populate preview with last snapshot
+  const preview = document.getElementById('shPreview');
+  const previewImg = document.getElementById('previewImg');
+  const previewInfo = document.getElementById('previewInfo');
+  const last = cam.last_snapshot;
+  if (last) {
+    previewImg.src = `${IMG_BASE}${last.path}?_=${Date.now()}`;
+    previewInfo.innerHTML = `<span>${formatTimeShort(last.captured_at)}</span><span class="ago">${timeAgo(last.captured_at)}</span>`;
+    preview.classList.add('has-image');
+  } else {
+    preview.classList.remove('has-image');
   }
 
   renderSnaps(camId, di.value);
@@ -958,10 +998,14 @@ async function refreshDash() {
 
 function populateHour() {
   const sel = document.getElementById('hourSelect');
+  const now = new Date();
+  const curH = String(now.getHours()).padStart(2, '0');
   for (let h = 0; h < 24; h++) {
+    const v = String(h).padStart(2, '0');
     const o = document.createElement('option');
-    o.value = String(h).padStart(2, '0');
-    o.textContent = `${String(h).padStart(2, '0')}:00`;
+    o.value = v;
+    o.textContent = `${v}:00`;
+    if (v === curH) o.selected = true;
     sel.appendChild(o);
   }
 }
