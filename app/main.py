@@ -10,7 +10,9 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -84,6 +86,14 @@ app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def log_validation_error(request: Request, exc: RequestValidationError):
+    """Log pydantic validation errors that never reach route handlers."""
+    logger.warning(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
+    return await request_validation_exception_handler(request, exc)
+
 
 app.add_middleware(
     CORSMiddleware,
