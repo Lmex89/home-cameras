@@ -1,14 +1,21 @@
+"""FastAPI router for snapshot retrieval endpoints.
+
+Exposes endpoints to fetch snapshot metadata, query snapshots by date
+for a camera, and stream snapshot image files (including from archived
+ZIP storage).
+"""
+
 from datetime import date
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from loguru import logger
 
 from app.api.deps import get_snapshot_service
 from app.application.services.snapshot_service import SnapshotService
 from app.core.config import settings
 from app.domain.schemas import SnapshotRead
+from app.infrastructure.archive import read_snapshot_from_archive
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
@@ -18,6 +25,18 @@ async def get_snapshot(
     snapshot_id: int,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """Retrieve a single snapshot by its identifier.
+
+    \f
+    Args:
+        snapshot_id: The unique identifier of the snapshot.
+
+    Returns:
+        The serialized snapshot record.
+
+    Raises:
+        HTTPException: 404 if the snapshot does not exist.
+    """
     snap = await service._uow.snapshots.get_by_id(snapshot_id)
     if not snap:
         logger.warning(f"Snapshot {snapshot_id} not found")
@@ -25,12 +44,22 @@ async def get_snapshot(
     return SnapshotRead.model_validate(snap)
 
 
-@router.get("/{camera_id}/by-date")
+@router.get("/{camera_id}/by-date", response_model=list[SnapshotRead])
 async def get_camera_snapshots(
     camera_id: int,
     snapshot_date: date,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """List all snapshots for a camera on a given date.
+
+    \f
+    Args:
+        camera_id: The unique identifier of the camera.
+        snapshot_date: The date to query snapshots for.
+
+    Returns:
+        A list of serialized snapshot records captured on that date.
+    """
     snapshots = await service.get_camera_snapshots(camera_id, snapshot_date)
     logger.debug(f"Camera {camera_id} snapshots on {snapshot_date}: {len(snapshots)}")
     return [SnapshotRead.model_validate(s) for s in snapshots]
@@ -41,13 +70,38 @@ async def get_snapshot_image(
     snapshot_id: int,
     service: SnapshotService = Depends(get_snapshot_service),
 ):
+    """Stream a snapshot's JPEG image file.
+
+    \f
+    Args:
+        snapshot_id: The unique identifier of the snapshot.
+
+    Returns:
+        A FileResponse serving the JPEG image.
+
+    Raises:
+        HTTPException: 404 if the snapshot record or image file is missing.
+    """
     snap = await service._uow.snapshots.get_by_id(snapshot_id)
     if not snap:
         logger.warning(f"Snapshot image: snapshot {snapshot_id} not found")
         raise HTTPException(status_code=404, detail="Snapshot not found")
+
     full_path = settings.snapshots_dir / snap.image_path
-    if not full_path.exists():
-        logger.warning(f"Snapshot image file not found: {full_path}")
-        raise HTTPException(status_code=404, detail="Image file not found")
-    logger.debug(f"Serving snapshot image: {full_path}")
-    return FileResponse(str(full_path), media_type="image/jpeg")
+    if full_path.exists():
+        logger.debug(f"Serving snapshot image: {full_path}")
+        return FileResponse(str(full_path), media_type="image/jpeg")
+
+    # Try serving from archive if the raw file was rotated away
+    if snap.archive_path:
+        try:
+            data = read_snapshot_from_archive(snap.archive_path)
+            logger.debug(f"Serving snapshot {snapshot_id} from archive {snap.archive_path}")
+            return Response(content=data, media_type="image/jpeg")
+        except FileNotFoundError:
+            logger.warning(f"Archive file missing for snapshot {snapshot_id}: {snap.archive_path}")
+        except Exception as e:
+            logger.exception(f"Failed to read snapshot {snapshot_id} from archive: {e}")
+
+    logger.warning(f"Snapshot image file not found: {full_path}, archive={snap.archive_path}")
+    raise HTTPException(status_code=404, detail="Image file not found")

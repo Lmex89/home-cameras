@@ -47,7 +47,7 @@ cameras:
     port: 80
     username: "admin"
     password: "cambio123"
-    interval_minutes: 1
+    interval_seconds: 60
     enabled: true
     snapshot_url: "http://192.168.1.100/cgi-bin/snapshot.cgi"  # optional override
 ```

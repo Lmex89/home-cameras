@@ -1,3 +1,10 @@
+"""Async SQLAlchemy engine, session factory, and schema initialization.
+
+Creates the shared async engine and session maker from application settings
+and provides ``init_db`` to bootstrap the SQLite schema from a raw SQL file
+on application startup.
+"""
+
 from pathlib import Path
 
 from loguru import logger
@@ -18,11 +25,48 @@ session_factory = async_sessionmaker(
 )
 
 
+async def _migrate_interval_column(conn) -> None:
+    """Migrate legacy interval_minutes column to interval_seconds."""
+    result = await conn.exec_driver_sql("PRAGMA table_info(cameras)")
+    columns = {row["name"] for row in result.mappings().all()}
+    if "interval_minutes" not in columns:
+        return
+    logger.warning("Legacy interval_minutes column found; migrating to interval_seconds")
+    await conn.exec_driver_sql(
+        "ALTER TABLE cameras RENAME COLUMN interval_minutes TO interval_seconds"
+    )
+    await conn.exec_driver_sql(
+        "UPDATE cameras SET interval_seconds = interval_seconds * 60"
+    )
+    logger.info("Migration complete: interval_minutes -> interval_seconds")
+
+
+async def _migrate_archive_column(conn) -> None:
+    """Add archive_path column to snapshots table if missing."""
+    result = await conn.exec_driver_sql("PRAGMA table_info(snapshots)")
+    columns = {row["name"] for row in result.mappings().all()}
+    if "archive_path" in columns:
+        return
+    logger.warning("archive_path column missing; adding to snapshots table")
+    await conn.exec_driver_sql("ALTER TABLE snapshots ADD COLUMN archive_path TEXT")
+    logger.info("Migration complete: added archive_path to snapshots")
+
+
 async def init_db(sql_path: Path) -> None:
+    """Initialize the database schema from a raw SQL file.
+
+    Reads the SQL file, splits it into statements by semicolon, and executes
+    each non-empty statement against the database engine within a transaction.
+
+    Args:
+        sql_path: Path to the SQL DDL file to execute.
+    """
     if not sql_path.exists():
         logger.error(f"Schema file not found at {sql_path}")
         return
     async with engine.begin() as conn:
+        await _migrate_interval_column(conn)
+        await _migrate_archive_column(conn)
         raw = sql_path.read_text()
         stmt_count = 0
         for statement in raw.split(";"):

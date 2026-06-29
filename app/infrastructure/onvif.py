@@ -1,10 +1,36 @@
+"""ONVIF infrastructure adapter wrapping onvif-python.
+
+Encapsulates all ONVIF wire-protocol calls (connection checks, snapshot
+and stream URI resolution, RTSP auth URL building) so services depend on
+this adapter rather than the third-party client directly.
+"""
+
 from loguru import logger
 from onvif import ONVIFClient
 from typing import Optional
 
 
 class ONVIFCameraClient:
+    """Adapter that performs ONVIF operations against a remote camera.
+
+    Each method opens a short-lived ONVIFClient connection, so instances
+    are stateless and safe to share as a singleton injected into
+    SnapshotService.
+    """
+
     def test_connection(self, host: str, port: int, username: str, password: str) -> tuple[bool, list[str], str | None]:
+        """Verify ONVIF connectivity and collect media profile tokens.
+
+        Args:
+            host: The camera hostname or IP address.
+            port: The ONVIF service port (commonly 80 or 8000).
+            username: The camera authentication username.
+            password: The camera authentication password.
+
+        Returns:
+            A tuple of (success flag, profile tokens, error message).
+            The error is None when the connection succeeds.
+        """
         logger.debug(f"Testing ONVIF connection to {host}:{port}")
         try:
             client = ONVIFClient(host, port, username, password, timeout=10)
@@ -23,6 +49,22 @@ class ONVIFCameraClient:
     def get_snapshot_uri(
         self, host: str, port: int, username: str, password: str, profile_token: str | None = None
     ) -> tuple[str | None, str | None]:
+        """Resolve the JPEG snapshot URI for a camera profile.
+
+        When profile_token is None, auto-selects the first available media
+        profile before requesting the snapshot URI.
+
+        Args:
+            host: The camera hostname or IP address.
+            port: The ONVIF service port.
+            username: The camera authentication username.
+            password: The camera authentication password.
+            profile_token: Optional media profile token; auto-selected when None.
+
+        Returns:
+            A tuple of (snapshot URI, error message). The URI is None on
+            failure and the error is None on success.
+        """
         logger.debug(f"Getting snapshot URI from {host}:{port} (profile: {profile_token})")
         try:
             client = ONVIFClient(host, port, username, password, timeout=15)
@@ -47,6 +89,19 @@ class ONVIFCameraClient:
     def get_stream_uri(
         self, host: str, port: int, username: str, password: str, profile_token: str
     ) -> tuple[Optional[str], Optional[str]]:
+        """Resolve the RTSP unicast stream URI for a given profile.
+
+        Args:
+            host: The camera hostname or IP address.
+            port: The ONVIF service port.
+            username: The camera authentication username.
+            password: The camera authentication password.
+            profile_token: The media profile token to request the stream for.
+
+        Returns:
+            A tuple of (stream URI, error message). The URI is None on
+            failure and the error is None on success.
+        """
         logger.debug(f"Getting stream URI from {host}:{port} (profile: {profile_token})")
         try:
             client = ONVIFClient(host, port, username, password, timeout=15)
@@ -65,6 +120,21 @@ class ONVIFCameraClient:
     def get_jpeg_stream_uri(
         self, host: str, port: int, username: str, password: str
     ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Find a JPEG-encoded stream URI among available profiles.
+
+        Iterates media profiles and returns the first whose
+        VideoEncoderConfiguration uses JPEG encoding.
+
+        Args:
+            host: The camera hostname or IP address.
+            port: The ONVIF service port.
+            username: The camera authentication username.
+            password: The camera authentication password.
+
+        Returns:
+            A tuple of (JPEG stream URI, profile token, error message).
+            Both the URI and token are None when no JPEG profile exists.
+        """
         logger.debug(f"Looking for JPEG stream on {host}:{port}")
         try:
             client = ONVIFClient(host, port, username, password, timeout=15)
@@ -84,6 +154,18 @@ class ONVIFCameraClient:
     def get_first_stream_uri(
         self, host: str, port: int, username: str, password: str
     ) -> tuple[Optional[str], Optional[str]]:
+        """Resolve the stream URI for the first available media profile.
+
+        Args:
+            host: The camera hostname or IP address.
+            port: The ONVIF service port.
+            username: The camera authentication username.
+            password: The camera authentication password.
+
+        Returns:
+            A tuple of (stream URI, error message). The URI is None when
+            no profiles exist or the request fails.
+        """
         logger.debug(f"Getting first available stream URI from {host}:{port}")
         try:
             client = ONVIFClient(host, port, username, password, timeout=15)
@@ -101,6 +183,22 @@ class ONVIFCameraClient:
     def get_best_stream_uri(
         self, host: str, port: int, username: str, password: str
     ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Resolve the stream URI for the highest-resolution media profile.
+
+        Selects the profile with the largest Width*Height product and
+        requests its RTSP unicast stream URI.
+
+        Args:
+            host: The camera hostname or IP address.
+            port: The ONVIF service port.
+            username: The camera authentication username.
+            password: The camera authentication password.
+
+        Returns:
+            A tuple of (stream URI, profile token, error message). The
+            URI and token are None when no profiles exist or the request
+            fails.
+        """
         logger.debug(f"Finding best stream URI from {host}:{port}")
         try:
             client = ONVIFClient(host, port, username, password, timeout=15)
@@ -125,6 +223,20 @@ class ONVIFCameraClient:
             return None, None, str(e)
 
     def build_auth_url(self, raw_uri: str, username: str, password: str) -> str:
+        """Embed credentials into a URI scheme when possible.
+
+        Inserts username:password into the URI authority so callers can
+        fetch RTSP or HTTP snapshots without separate auth handling.
+
+        Args:
+            raw_uri: The original URI to amend.
+            username: The camera authentication username.
+            password: The camera authentication password.
+
+        Returns:
+            The URI with embedded credentials, or the original URI when
+            credentials are empty or the URI has no scheme separator.
+        """
         if not raw_uri:
             return raw_uri
         if username and password:

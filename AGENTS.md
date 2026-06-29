@@ -98,3 +98,69 @@ Every endpoint MUST use pydantic schemas for both input validation and output se
 - **Output**: Always call `Schema.model_validate(orm_obj)` before returning ORM data. Never return raw ORM instances — FastAPI `response_model` alone is not sufficient for explicit validation.
 - **Serialization**: Use `.model_dump()` / `.model_dump(exclude_unset=True)` when converting schemas to dicts for service layers.
 - **Config**: Always use `ConfigDict(from_attributes=True)` on read schemas, never bare dicts.
+
+## Mandatory: Google-style docstrings
+
+Every module, class, function, and method MUST have a Google-style docstring. FastAPI path operations use the docstring as the OpenAPI description (supports Markdown).
+
+### Format
+
+```
+"""Single-line summary (max 80 chars, ends with period).
+
+Optionally leave a blank line, then longer description. Sections are
+separated by blank lines.
+```
+
+### Sections by context
+
+| Context | Required sections |
+|---|---|
+| **Module** | Summary describing purpose and contents |
+| **Class** | Summary + description of responsibility |
+| **Function / Method** | Summary, `Args:` (if any params), `Returns:` (if not None), `Raises:` (if any) |
+| **FastAPI route** | Summary + Markdown body (used as OpenAPI `description`). Use `\f` to truncate for OpenAPI if the docstring is long. |
+| **Property** | Summary only (unless complex) |
+| **`__init__`** | Document in the class docstring instead, or use `Args:` on `__init__` |
+
+### Rules
+
+1. **Always `"""` triple double-quotes** — never `'''` or `#` comments for docstrings.
+2. **Summary on first line** — imperative mood ("Get the user", not "Gets the user").
+3. **`Args:`** — one line per parameter: `param_name: Description.` Include type only if non-obvious.
+4. **`Returns:`** — describe the return value and its type: `The snapshot file path.` Omit if `-> None`.
+5. **`Raises:`** — one line per exception: `ValueError: Description of when it occurs.`
+6. **Types in docstrings** — do NOT duplicate type annotations. The type hints serve that purpose. Docstrings describe *meaning and behavior*.
+7. **No docstring is worse than a bad one** — if a function is trivial (`@property` returning `self._x`), a one-line summary is acceptable.
+
+### Examples
+
+```python
+async def get_daily_report(self, target_date: date) -> dict:
+    """Group all snapshots for a date by camera.
+
+    Args:
+        target_date: The date to query (in project timezone).
+
+    Returns:
+        Dict keyed by camera_id with camera name and snapshot list,
+        or empty dict if no snapshots exist.
+    """
+    ...
+```
+
+```python
+@app.post("/items/")
+async def create_item(payload: ItemCreate) -> ItemRead:
+    """Create a new item.
+
+    Validates the input and persists to the database. Returns the
+    created item with generated fields populated.
+
+    \f
+    **Notes:**
+    - Name must be unique within the project.
+    - Tags are lowercased on creation.
+    """
+    ...
+```
