@@ -1,12 +1,12 @@
 """Pydantic schemas for request validation and response serialization.
 
 Provides input schemas (``CameraCreate``, ``CameraUpdate``), read schemas
-(``CameraRead``, ``SnapshotRead``), and report/result schemas used across
-the API layer.
+(``CameraRead``, ``SnapshotRead``, ``SnapshotAnalysisRead``), and report/result
+schemas used across the API layer including ML analysis.
 """
 
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -89,13 +89,46 @@ class SnapshotForceResult(BaseModel):
     error: str | None = None
 
 
+class DetectedObject(BaseModel):
+    """A single object detected by the ML model."""
+
+    class_name: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    bbox: list[float] = Field(min_length=4, max_length=4)
+
+
+class SnapshotAnalysisRead(BaseModel):
+    """Serialize a snapshot analysis result for API responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    snapshot_id: int
+    model_name: str
+    model_version: str
+    status: str
+    objects_json: str | None = None
+    person_count: int = 0
+    review_required: bool = False
+    review_reason: str | None = None
+    anomaly_score: float | None = None
+    error_message: str | None = None
+    analyzed_at: datetime | None = None
+
+
+class SnapshotWithAnalysis(SnapshotRead):
+    """Extend SnapshotRead with optional analysis data."""
+
+    analysis: SnapshotAnalysisRead | None = None
+
+
 class DailyReportCamera(BaseModel):
     """Serialize one camera's section within a daily report."""
 
     camera_id: int
     camera_name: str
     total_snapshots: int
-    snapshots: list[SnapshotRead]
+    snapshots: list[SnapshotWithAnalysis]
 
 
 class DailyReport(BaseModel):
@@ -124,3 +157,31 @@ class VideoResponse(BaseModel):
     """Serialize the result of a successful video generation."""
 
     video_url: str
+
+
+class AnalysisReviewUpdate(BaseModel):
+    """Payload for updating the review status of an analysis."""
+
+    review_required: bool
+    review_reason: str | None = None
+
+
+class PendingReviewItem(BaseModel):
+    """A snapshot flagged for human review with its metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    analysis_id: int
+    snapshot_id: int
+    camera_id: int
+    camera_name: str
+    captured_at: datetime
+    image_path: str
+    model_name: str
+    person_count: int = 0
+    review_required: bool = False
+    review_reason: str | None = None
+    anomaly_score: float | None = None
+    error_message: str | None = None
+    objects_json: str | None = None
+    analyzed_at: datetime | None = None

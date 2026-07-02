@@ -53,10 +53,10 @@ logger.add(
 # ──────────────────────────────────────────────────────────────────────
 
 from app.core.database import init_db
-from app.api.routers import cameras, snapshots, report, videos
+from app.api.routers import cameras, snapshots, report, videos, reviews
 from app.web import pages
 from app.seed import seed_from_yaml
-from app.scheduler import scheduler, load_schedule, schedule_retention
+from app.scheduler import scheduler, load_schedule, schedule_retention, schedule_analysis
 
 
 @asynccontextmanager
@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     await load_schedule()
     schedule_retention()
+    schedule_analysis()
     logger.info(f"{settings.app_name} started")
     yield
     logger.info(f"Shutting down {settings.app_name}")
@@ -119,6 +120,7 @@ app.include_router(cameras.router)
 app.include_router(snapshots.router)
 app.include_router(report.router)
 app.include_router(videos.router)
+app.include_router(reviews.router)
 
 
 @app.get("/index.html", response_class=HTMLResponse)
@@ -131,6 +133,21 @@ async def serve_dashboard_index():
     """
     index_path = Path(__file__).resolve().parent.parent / "index.html"
     return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+
+
+@app.get("/reviews.html", response_class=HTMLResponse)
+async def serve_reviews_page():
+    """Serve the standalone review dashboard page.
+
+    \f
+    Returns:
+        The contents of the project-root reviews.html file.
+    """
+    import os
+    path = Path(__file__).resolve().parent.parent / "reviews.html"
+    if not path.exists():
+        return HTMLResponse("<h1>Not Found</h1><p>reviews.html not deployed</p>", status_code=404)
+    return HTMLResponse(content=path.read_text(encoding="utf-8"))
 
 
 @app.get("/data/manifest.json")
@@ -180,13 +197,21 @@ async def serve_manifest():
             )
             snapshots.setdefault(cam_id, {}).setdefault(d, []).append(snap_dict)
 
+        from app.application.services.analysis_service import AnalysisService
+        analysis_service = AnalysisService(uow)
+        pending_reviews = await analysis_service.get_pending_reviews(limit=100)
+        review_count = len(pending_reviews)
+
         logger.info(
             f"Manifest generated: {len(cameras_data)} cameras, "
-            f"{sum(total_by_cam.values())} snapshots"
+            f"{sum(total_by_cam.values())} snapshots, "
+            f"{review_count} pending reviews"
         )
 
         return {
             "generated_at": datetime.now().isoformat(),
             "cameras": cameras_data,
             "snapshots": snapshots,
+            "pending_reviews": pending_reviews[:10],
+            "review_count": review_count,
         }

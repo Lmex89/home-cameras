@@ -1,8 +1,8 @@
 """FastAPI dependency providers for the cameras application.
 
 Exposes dependency-injection callables that construct the Unit of Work, the
-ONVIF camera client, and the camera and snapshot services for use in route
-functions via ``Depends``.
+ONVIF camera client, and the camera, snapshot, and analysis services for
+use in route functions via ``Depends``.
 """
 
 from collections.abc import AsyncGenerator
@@ -15,6 +15,7 @@ from app.core.database import session_factory
 from app.core.unit_of_work import UnitOfWork
 from app.application.services.camera_service import CameraService
 from app.application.services.snapshot_service import SnapshotService
+from app.application.services.analysis_service import AnalysisService
 from app.infrastructure.onvif import ONVIFCameraClient
 
 
@@ -69,3 +70,17 @@ async def get_snapshot_service(
         A SnapshotService instance ready for use in route handlers.
     """
     yield SnapshotService(uow, onvif)
+
+
+async def get_analysis_service(
+    uow: UnitOfWork = Depends(get_uow),
+) -> AsyncGenerator[AnalysisService, None]:
+    """Provide an AnalysisService wired with its dependencies.
+
+    Args:
+        uow: The Unit of Work for database access.
+
+    Yields:
+        An AnalysisService instance ready for use in route handlers.
+    """
+    yield AnalysisService(uow)

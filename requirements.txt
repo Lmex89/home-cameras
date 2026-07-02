@@ -11,3 +11,4 @@ onvif-python>=0.2.0
 httpx>=0.28.0
 apscheduler>=3.10.4
 loguru>=0.7.0
+ultralytics>=8.0.0

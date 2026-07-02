@@ -52,6 +52,57 @@ async def _migrate_archive_column(conn) -> None:
     logger.info("Migration complete: added archive_path to snapshots")
 
 
+async def _migrate_analysis_tables(conn) -> None:
+    """Create analysis_jobs and snapshot_analyses tables if missing."""
+    result = await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = {row["name"] for row in result.mappings().all()}
+    if "analysis_jobs" not in tables:
+        logger.warning("analysis_jobs table missing; creating it")
+        await conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS analysis_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id INTEGER NOT NULL,
+                job_type TEXT NOT NULL DEFAULT 'yolo_detection',
+                status TEXT NOT NULL DEFAULT 'pending',
+                priority INTEGER NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 3,
+                error_message TEXT,
+                requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                started_at TIMESTAMP,
+                finished_at TIMESTAMP,
+                FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE
+            )
+        """)
+        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_analysis_jobs_status ON analysis_jobs(status, priority)")
+        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_analysis_jobs_snapshot ON analysis_jobs(snapshot_id)")
+        logger.info("Migration complete: created analysis_jobs table")
+    if "snapshot_analyses" not in tables:
+        logger.warning("snapshot_analyses table missing; creating it")
+        await conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS snapshot_analyses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id INTEGER NOT NULL,
+                model_name TEXT NOT NULL,
+                model_version TEXT NOT NULL DEFAULT '1.0',
+                status TEXT NOT NULL DEFAULT 'pending',
+                objects_json TEXT,
+                person_count INTEGER NOT NULL DEFAULT 0,
+                review_required BOOLEAN NOT NULL DEFAULT 0,
+                review_reason TEXT,
+                anomaly_score REAL,
+                error_message TEXT,
+                analyzed_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE,
+                UNIQUE(snapshot_id, model_name)
+            )
+        """)
+        await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_analyses_review ON snapshot_analyses(review_required, status)")
+        logger.info("Migration complete: created snapshot_analyses table")
+
+
 async def init_db(sql_path: Path) -> None:
     """Initialize the database schema from a raw SQL file.
 
@@ -67,6 +118,7 @@ async def init_db(sql_path: Path) -> None:
     async with engine.begin() as conn:
         await _migrate_interval_column(conn)
         await _migrate_archive_column(conn)
+        await _migrate_analysis_tables(conn)
         raw = sql_path.read_text()
         stmt_count = 0
         for statement in raw.split(";"):

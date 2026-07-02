@@ -1,13 +1,16 @@
 # Camera Monitor
 
-ONVIF-compatible camera snapshot monitoring system. Periodically captures snapshots from IP cameras, stores them with a web dashboard for review.
+ONVIF-compatible camera snapshot monitoring system with local ML analysis. Periodically captures snapshots from IP cameras, runs YOLO object detection, flags unusual events for human review, and provides a web dashboard for visualization.
 
 ## Features
 
 - **ONVIF auto-discovery** — connects to cameras via ONVIF protocol, fetches snapshot URIs
 - **Scheduled capture** — per-camera configurable interval via APScheduler (default 1 min)
 - **Triple fallback capture** — direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile)
-- **Web dashboard** — view last snapshot, status, and daily reports for all cameras
+- **ML object detection** — YOLO runs locally on every snapshot (graceful stub when `ultralytics` is not installed)
+- **Review rule engine** — auto-flags persons after hours, high crowd counts, unexpected objects
+- **Human review workflow** — API endpoints to list, confirm, or reject flagged snapshots
+- **Web dashboard** — view last snapshot, status, daily reports, and review badges for all cameras
 - **YAML-based setup** — define cameras in `cameras.yaml`, seeded on startup
 - **Docker ready** — multi-stage Alpine build with ffmpeg, single `docker compose up`
 
@@ -34,7 +37,14 @@ Set via environment variables or `.env` file:
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | HTTP port |
 | `SNAPSHOT_RETENTION_DAYS` | `30` | Auto-delete snapshots older than this |
-| `DEFAULT_INTERVAL_MINUTES` | `1` | Default capture interval for new cameras |
+| `DEFAULT_INTERVAL_SECONDS` | `60` | Default capture interval for new cameras |
+| `ANALYSIS_ENABLED` | `true` | Enable ML analysis pipeline |
+| `ANALYSIS_INTERVAL_SECONDS` | `30` | How often to poll for pending analysis jobs |
+| `YOLO_MODEL_PATH` | `yolov8n.pt` | Path to YOLO weights file |
+| `YOLO_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence for detection |
+| `REVIEW_PERSON_AFTER_HOUR` | `22` | Hour (0-23) after which persons trigger review |
+| `REVIEW_PERSON_BEFORE_HOUR` | `6` | Hour (0-23) before which persons trigger review |
+| `REVIEW_MAX_PERSON_COUNT` | `5` | Max persons before auto-flagging |
 
 ## Cameras YAML
 
@@ -76,10 +86,14 @@ This means cameras that don't support `GetSnapshotUri` (e.g. cheap NVRs, older m
 | `DELETE` | `/api/cameras/{id}` | Remove camera |
 | `POST` | `/api/cameras/test` | Test ONVIF connection |
 | `POST` | `/api/cameras/{id}/snapshot` | Force snapshot |
-| `GET` | `/api/snapshots/{id}` | Get snapshot metadata |
+| `GET` | `/api/snapshots/{id}` | Get snapshot metadata (includes analysis) |
 | `GET` | `/api/snapshots/{camera_id}/by-date` | Snapshots by camera + date |
 | `GET` | `/api/snapshots/image/{id}` | Snapshot JPEG file |
-| `GET` | `/api/report/{date}` | Daily report data |
+| `GET` | `/api/report/{date}` | Daily report data (includes analysis) |
+| `GET` | `/api/reviews/pending` | List snapshots flagged for review |
+| `GET` | `/api/reviews/count` | Count of pending reviews |
+| `GET` | `/api/reviews/detections` | Paginated detections browser (supports `days_back`, `date_from`, `camera_id`, `class_name`, `limit`, `offset`) |
+| `POST` | `/api/reviews/{id}/review` | Confirm or reject a review flag |
 
 ## Architecture
 
@@ -89,15 +103,50 @@ app/
 ├── core/                # config, database engine, UnitOfWork
 ├── domain/              # SQLAlchemy models, Pydantic schemas
 ├── application/         # services, repositories
-├── infrastructure/      # ONVIFCameraClient (onvif-python wrapper)
-├── api/                 # FastAPI routers + dependency injection
-├── web/                 # Jinja2 pages + static assets
-├── sql/schema.sql       # raw DDL run on startup
-├── scheduler.py         # APScheduler per-camera interval jobs
-└── seed.py              # YAML → DB seeder
+│   ├── services/
+│   │   ├── snapshot_service.py  # capture + reporting
+│   │   ├── camera_service.py    # camera CRUD
+│   │   ├── analysis_service.py  # ML analysis orchestrator
+│   │   └── retention_service.py # archive cleanup
+│   └── repositories/
+│       ├── camera.py
+│       ├── snapshot.py
+│       ├── analysis_job.py
+│       └── snapshot_analysis.py
+├── infrastructure/
+│   ├── onvif.py          # ONVIFCameraClient
+│   ├── archive.py        # ZIP snapshot retriever
+│   └── ml/
+│       ├── __init__.py
+│       └── yolo.py        # YOLODetector adapter
+├── api/                  # FastAPI routers + dependency injection
+│   └── routers/
+│       ├── cameras.py
+│       ├── snapshots.py
+│       ├── report.py
+│       ├── videos.py
+│       └── reviews.py     # review management endpoints
+├── web/                  # Jinja2 pages + static assets
+├── sql/schema.sql        # raw DDL run on startup
+├── scheduler.py          # APScheduler (capture + analysis + retention)
+└── seed.py               # YAML → DB seeder
 ```
 
-Data flow: routes → services (business logic) → repositories (data access). `UnitOfWork` wraps async SQLAlchemy sessions.
+Data flow: routes → services (business logic) → repositories (data access). `UnitOfWork` wraps async SQLAlchemy sessions and exposes `.cameras`, `.snapshots`, `.analysis_jobs`, and `.snapshot_analyses` repositories.
+
+## Analysis Pipeline
+
+After each successful snapshot capture, an `analysis_job` is enqueued. A scheduler poll (every 30s by default) picks pending jobs and runs them through:
+
+1. **YOLO object detection** — identifies persons, vehicles, animals, and other common objects
+2. **Rule engine** — applies heuristics to decide if human review is needed:
+   - Person detected during restricted hours (10pm–6am)
+   - Person count above threshold (default 5)
+   - Unexpected object classes for the camera's view
+3. **Result storage** — detection data, review flags, and anomaly scores are written to `snapshot_analyses`
+4. **Review surfacing** — flagged items appear in the dashboard manifest and the review API
+
+> The YOLO model is optional. When `ultralytics` is not installed, the detector runs in stub mode and returns empty results — the rest of the pipeline still operates without errors.
 
 ## Storage
 

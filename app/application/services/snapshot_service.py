@@ -20,8 +20,9 @@ from loguru import logger
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
 from app.domain.models import Camera, Snapshot
-from app.domain.schemas import DailyReport
+from app.domain.schemas import DailyReport, DailyReportCamera, SnapshotRead, SnapshotWithAnalysis, SnapshotAnalysisRead
 from app.infrastructure.onvif import ONVIFCameraClient
+from app.application.services.analysis_service import AnalysisService
 
 
 class SnapshotService:
@@ -41,6 +42,7 @@ class SnapshotService:
         """
         self._uow = uow
         self._onvif = onvif
+        self._analysis = AnalysisService(uow)
 
     async def _save_image(self, camera: Camera, data: bytes) -> tuple[Path, datetime]:
         """Write raw image bytes to disk under the snapshots directory.
@@ -202,6 +204,7 @@ class SnapshotService:
                 )
                 logger.info(f"Camera {camera.name}: direct URL snapshot saved")
                 await self._uow.snapshots.add(snapshot)
+                await self._analysis.analyze_snapshot(snapshot)
                 return snapshot
             last_error = error or "direct URL failed"
 
@@ -217,6 +220,7 @@ class SnapshotService:
             )
             logger.info(f"Camera {camera.name}: ONVIF snapshot saved to {file_path}")
             await self._uow.snapshots.add(snapshot)
+            await self._analysis.analyze_snapshot(snapshot)
             return snapshot
         last_error = error
 
@@ -232,6 +236,7 @@ class SnapshotService:
             )
             logger.info(f"Camera {camera.name}: RTSP snapshot saved to {file_path}")
             await self._uow.snapshots.add(snapshot)
+            await self._analysis.analyze_snapshot(snapshot)
             return snapshot
         last_error = error
 
@@ -271,8 +276,6 @@ class SnapshotService:
         Returns:
             A DailyReport schema with validated camera and snapshot data.
         """
-        from app.domain.schemas import DailyReport, DailyReportCamera, SnapshotRead
-
         all_snapshots = await self._uow.snapshots.get_by_date(target_date)
         logger.debug(f"Daily report for {target_date}: {len(all_snapshots)} snapshots total")
         grouped: dict[int, list[Snapshot]] = defaultdict(list)
@@ -282,7 +285,21 @@ class SnapshotService:
         for camera_id, snap_list in grouped.items():
             cam = await self._uow.cameras.get_by_id(camera_id)
             name = cam.name if cam else f"Camera {camera_id}"
-            snapshots = [SnapshotRead.model_validate(s) for s in snap_list]
+            snapshot_ids = [s.id for s in snap_list]
+            analyses = await self._uow.snapshot_analyses.get_by_camera_and_date(camera_id, snapshot_ids)
+            analysis_by_snapshot: dict[int, SnapshotAnalysisRead | None] = {}
+            for a in analyses:
+                analysis_by_snapshot[a.snapshot_id] = SnapshotAnalysisRead.model_validate(a) if a else None
+
+            snapshots = []
+            for s in snap_list:
+                snap_read = SnapshotRead.model_validate(s)
+                snap_with = SnapshotWithAnalysis(
+                    **snap_read.model_dump(),
+                    analysis=analysis_by_snapshot.get(s.id),
+                )
+                snapshots.append(snap_with)
+
             cameras_list.append(
                 DailyReportCamera(
                     camera_id=camera_id,

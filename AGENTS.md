@@ -15,33 +15,60 @@ app/
 ├── core/                # config, database engine, UnitOfWork
 ├── domain/              # SQLAlchemy models, Pydantic schemas
 ├── application/         # services, repositories
-├── infrastructure/      # ONVIFCameraClient (onvif-python wrapper)
-├── api/                 # FastAPI routers + dependency injection
-├── web/                 # Jinja2 pages + static assets
-├── sql/schema.sql       # raw DDL run on startup
-├── scheduler.py         # APScheduler per-camera interval jobs
-└── seed.py              # YAML → DB seeder
+│   ├── services/
+│   │   ├── snapshot_service.py  # capture + reporting
+│   │   ├── camera_service.py    # camera CRUD
+│   │   ├── analysis_service.py  # ML analysis orchestrator
+│   │   └── retention_service.py # archive cleanup
+│   └── repositories/
+│       ├── camera.py
+│       ├── snapshot.py
+│       ├── analysis_job.py
+│       └── snapshot_analysis.py
+├── infrastructure/
+│   ├── onvif.py          # ONVIFCameraClient
+│   ├── archive.py        # ZIP snapshot retriever
+│   └── ml/
+│       ├── __init__.py
+│       └── yolo.py        # YOLODetector adapter
+├── api/                  # FastAPI routers + dependency injection
+│   └── routers/
+│       ├── cameras.py
+│       ├── snapshots.py
+│       ├── report.py
+│       ├── videos.py
+│       └── reviews.py     # review management endpoints
+├── web/                  # Jinja2 pages + static assets
+├── sql/schema.sql        # raw DDL run on startup
+├── scheduler.py          # APScheduler (capture + analysis + retention)
+└── seed.py               # YAML → DB seeder
 ```
 
-DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWork` wraps an async SQLAlchemy session and exposes `.cameras` and `.snapshots` repos.
+DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWork` wraps an async SQLAlchemy session and exposes `.cameras`, `.snapshots`, `.analysis_jobs`, and `.snapshot_analyses` repos.
 
 ## Key flows
 
 | Step | What happens |
 |---|---|
 | Startup | `lifespan` → init DB from `sql/schema.sql` → seed from `cameras.yaml` → start APScheduler |
-| Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile) → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
-| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db` and `snapshots/`. |
+| Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
+| Analysis  | After each successful capture, `AnalysisService.analyze_snapshot()` enqueues an `analysis_job`. A separate scheduler poll (every 30s) processes pending jobs via `process_next_batch()`. |
+| Review    | `AnalysisService._apply_review_rules()` flags snapshots for human review (person after hours, high count, unexpected objects). Review items surface in the manifest and `/api/reviews/pending` endpoint. |
+| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db`, `snapshots/`, `models/`, and `logs/`. |
 
 ## Config
 
 Env vars (via `pydantic-settings`, reads `.env`):
 
-- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `SNAPSHOT_RETENTION_DAYS`, `DEFAULT_INTERVAL_MINUTES`
+- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `SNAPSHOT_RETENTION_DAYS`, `DEFAULT_INTERVAL_SECONDS`
+- `ANALYSIS_ENABLED`, `ANALYSIS_INTERVAL_SECONDS`, `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`
+- `REVIEW_PERSON_AFTER_HOUR`, `REVIEW_PERSON_BEFORE_HOUR`, `REVIEW_MAX_PERSON_COUNT`
 
 ## Docker
 
 Multi-stage Alpine build. Includes `ffmpeg` for RTSP snapshot fallback. `docker-compose.yml` mounts `data/` and `cameras.yaml`. App user is `appuser` (UID not fixed).
+
+For GPU-accelerated ML inference, a separate worker image based on `nvidia/cuda` is planned.
 
 ## Dependencies
 
@@ -49,6 +76,7 @@ Multi-stage Alpine build. Includes `ffmpeg` for RTSP snapshot fallback. `docker-
 - onvif-python, httpx (for snapshot fetch)
 - APScheduler (async), PyYAML, pydantic-settings
 - ffmpeg (RTSP frame grab fallback)
+- ultralytics (YOLO inference, graceful stub mode when missing)
 
 ## Mandatory: SOLID principles
 

@@ -124,6 +124,34 @@ async def retention_job() -> None:
         logger.info(f"Retention job complete: {result}")
 
 
+async def analysis_job() -> None:
+    """Process pending analysis jobs from the queue."""
+    logger.debug("analysis_job fired")
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            from app.application.services.analysis_service import AnalysisService
+            service = AnalysisService(uow)
+            processed = await service.process_next_batch(limit=5)
+            if processed:
+                logger.info(f"Analysis batch processed: {processed} jobs")
+            else:
+                logger.debug("Analysis batch: no pending jobs")
+    except Exception:
+        logger.exception("Analysis job failed")
+
+
+def schedule_analysis() -> None:
+    """Schedule periodic analysis job processing."""
+    scheduler.add_job(
+        analysis_job,
+        trigger=IntervalTrigger(seconds=settings.analysis_interval_seconds),
+        id="analysis_processing",
+        replace_existing=True,
+        name="Analysis job processing",
+    )
+    logger.info(f"Scheduled analysis processing every {settings.analysis_interval_seconds}s")
+
+
 def schedule_retention() -> None:
     """Schedule the daily retention cleanup job at 03:00."""
     scheduler.add_job(

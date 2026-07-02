@@ -31,6 +31,26 @@ class Settings(BaseSettings):
     video_retention_days: int = 30
     default_interval_seconds: int = 60
     timezone: str = "America/Mexico_City"
+    yolo_model_path: str = "models/yolov8n.pt"
+    """Filesystem path to the YOLO weights file, relative to project root or absolute."""
+
+    yolo_confidence_threshold: float = 0.5
+    """Minimum confidence score (0–1) for a detection to be kept."""
+
+    review_person_after_hour: int = 22
+    """Hour (0–23) after which a detected person triggers a review flag."""
+
+    review_person_before_hour: int = 6
+    """Hour (0–23) before which a detected person triggers a review flag."""
+
+    review_max_person_count: int = 5
+    """Maximum persons allowed in a single frame before auto-flagging."""
+
+    analysis_enabled: bool = True
+    """Master toggle for the ML analysis pipeline. Set to ``false`` to skip all analysis."""
+
+    analysis_interval_seconds: int = 30
+    """How often (in seconds) the scheduler polls for new analysis jobs."""
 
     @property
     def base_dir(self) -> Path:

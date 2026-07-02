@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Review — Sentinel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,500;0,700;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0c;
+  --surface: #121216;
+  --surface2: #1a1a22;
+  --border: #2a2a35;
+  --text: #c8c8d0;
+  --text-dim: #6a6a78;
+  --amber: #ffb000;
+  --amber-dim: #b87a00;
+  --cyan: #00d4aa;
+  --cyan-dim: #009a7a;
+  --red: #ff4455;
+  --green: #44ddaa;
+  --glow-amber: 0 0 20px rgba(255,176,0,0.15);
+  --glow-cyan: 0 0 20px rgba(0,212,170,0.12);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 14px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 300;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,0.015) 2px,rgba(255,255,255,0.015) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+a { color: var(--cyan); text-decoration: none; }
+a:hover { color: var(--amber); }
+
+/* ─── Header ─── */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  background: var(--surface); position: sticky; top: 0; z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 16px; }
+.logo { font-size: 1.2rem; font-weight: 700; color: var(--amber); letter-spacing: 0.05em; text-shadow: var(--glow-amber); }
+.logo span { color: var(--cyan); }
+.header nav { display: flex; gap: 12px; }
+.header nav a {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; transition: all 0.2s;
+}
+.header nav a:hover { border-color: var(--amber); color: var(--amber); background: rgba(255,176,0,0.06); }
+.header nav a.active { border-color: var(--amber); color: var(--bg); background: var(--amber); }
+
+/* ─── Stats Bar ─── */
+.stats-bar {
+  display: flex; gap: 0; padding: 0 24px; background: var(--surface);
+  border-bottom: 1px solid var(--border); overflow-x: auto;
+}
+.stat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 24px; border-right: 1px solid var(--border);
+  min-width: 100px; transition: background 0.2s; cursor: default;
+}
+.stat:last-child { border-right: none; }
+.stat:hover { background: var(--surface2); }
+.stat-value { font-size: 1.6rem; font-weight: 500; color: var(--amber); line-height: 1.2; }
+.stat-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-top: 4px; white-space: nowrap; }
+.stat.stat-cyan .stat-value { color: var(--cyan); }
+.stat.stat-green .stat-value { color: var(--green); }
+.stat.stat-red .stat-value { color: var(--red); }
+
+/* ─── Main Layout ─── */
+.main { display: grid; grid-template-columns: 320px 1fr; gap: 0; min-height: calc(100vh - 110px); }
+
+/* ─── Sidebar / Filters ─── */
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; }
+.sidebar h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.filter-group { margin-bottom: 20px; }
+.filter-group label { display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 6px; }
+.filter-group select,.filter-group input {
+  width: 100%; padding: 8px 10px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px; color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; outline: none; transition: border-color 0.2s;
+}
+.filter-group select:focus,.filter-group input:focus { border-color: var(--amber); }
+.filter-group select option { background: var(--surface2); }
+
+/* Detection class legend */
+.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.6rem; color: var(--text-dim); }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ─── Tabs ─── */
+.tab-bar {
+  display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+  padding: 10px 20px; border: none; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.tab-btn:hover { color: var(--text); background: var(--surface2); }
+.tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); background: rgba(255,176,0,0.04); }
+
+/* ─── Content ─── */
+.content { padding: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+.tab-content { display: none; padding: 20px; }
+.tab-content.active { display: block; }
+
+.content-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+}
+.content-header h2 { font-size: 0.9rem; font-weight: 500; color: var(--text); }
+.content-header .count-badge {
+  font-size: 0.65rem; padding: 4px 12px; border: 1px solid var(--amber);
+  border-radius: 12px; color: var(--amber);
+}
+
+.refresh-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+  padding: 6px 14px; background: transparent; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+}
+.refresh-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,170,0.06); }
+
+/* ─── Review Cards ─── */
+.review-list { display: flex; flex-direction: column; gap: 12px; }
+.review-card {
+  display: grid; grid-template-columns: 180px 1fr auto; gap: 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; transition: all 0.2s; cursor: default; position: relative;
+}
+.review-card:hover { border-color: rgba(255,176,0,0.3); background: var(--surface2); }
+.review-card.reviewed { opacity: 0.4; border-color: var(--green); }
+.review-card.reviewed::after {
+  content: 'REVIEWED'; position: absolute; top: 8px; right: 8px;
+  font-size: 0.5rem; letter-spacing: 0.12em; color: var(--green);
+  border: 1px solid var(--green); padding: 2px 8px; border-radius: 3px;
+}
+
+.review-thumb { width: 180px; height: 120px; object-fit: cover; border-radius: 4px; cursor: pointer; transition: transform 0.2s; background: var(--surface2); }
+.review-thumb:hover { transform: scale(1.03); }
+.review-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.review-camera { font-size: 0.8rem; font-weight: 500; color: var(--text); }
+.review-time { font-size: 0.65rem; color: var(--text-dim); }
+
+.reason-badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 0.6rem;
+  padding: 3px 10px; border-radius: 3px; text-transform: uppercase;
+  letter-spacing: 0.08em; margin-top: 2px;
+}
+.reason-badge.person-after-hours { background: rgba(255,176,0,0.12); color: var(--amber); border: 1px solid rgba(255,176,0,0.25); }
+.reason-badge.high-count { background: rgba(255,68,85,0.12); color: var(--red); border: 1px solid rgba(255,68,85,0.25); }
+.reason-badge.unexpected-objects { background: rgba(0,212,170,0.1); color: var(--cyan); border: 1px solid rgba(0,212,170,0.2); }
+
+.detection-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.detection-tag {
+  font-size: 0.6rem; padding: 2px 8px; border-radius: 3px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text-dim); display: inline-flex; align-items: center; gap: 4px;
+}
+.detection-tag .conf { font-size: 0.55rem; color: var(--text-dim); opacity: 0.6; }
+.detection-tag.person { border-color: var(--amber); color: var(--amber); }
+.detection-tag.car { border-color: var(--cyan); color: var(--cyan); }
+.detection-tag.train { border-color: var(--red); color: var(--red); }
+.detection-tag.dog { border-color: #bb88ff; color: #bb88ff; }
+.detection-tag.bicycle { border-color: #66ddff; color: #66ddff; }
+.detection-tag.bird { border-color: #88dd88; color: #88dd88; }
+.detection-tag.bench { border-color: #ddaa66; color: #ddaa66; }
+.detection-tag.motorcycle { border-color: #ff88aa; color: #ff88aa; }
+.detection-tag.skateboard { border-color: #ffaa66; color: #ffaa66; }
+.detection-tag.parking\ meter { border-color: #66aaff; color: #66aaff; }
+.detection-tag.sheep { border-color: #ddddaa; color: #ddddaa; }
+.detection-tag.other { border-color: var(--text-dim); color: var(--text-dim); }
+.detection-tag.truck { border-color: #88aacc; color: #88aacc; }
+.detection-tag.cat { border-color: #dd88aa; color: #dd88aa; }
+
+.review-actions { display: flex; flex-direction: column; gap: 6px; justify-content: flex-start; }
+.btn-review {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
+  padding: 6px 14px; border-radius: 4px; border: 1px solid;
+  cursor: pointer; transition: all 0.2s; text-transform: uppercase;
+  letter-spacing: 0.08em; white-space: nowrap;
+}
+.btn-approve { background: transparent; border-color: var(--green); color: var(--green); }
+.btn-approve:hover { background: var(--green); color: var(--bg); }
+.btn-dismiss { background: transparent; border-color: var(--text-dim); color: var(--text-dim); }
+.btn-dismiss:hover { border-color: var(--red); color: var(--red); background: rgba(255,68,85,0.08); }
+.btn-view { background: transparent; border-color: var(--border); color: var(--text-dim); }
+.btn-view:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* ─── Detection Grid ─── */
+.detection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.detection-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px; transition: all 0.2s; cursor: default;
+}
+.detection-card:hover { border-color: rgba(0,212,170,0.25); background: var(--surface2); }
+.detection-card .thumb {
+  width: 100%; height: 140px; object-fit: cover; border-radius: 4px;
+  cursor: pointer; transition: transform 0.2s; background: var(--surface2);
+}
+.detection-card .thumb:hover { transform: scale(1.02); }
+.detection-card .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.detection-card .cam { font-size: 0.65rem; color: var(--cyan); }
+.detection-card .time { font-size: 0.55rem; color: var(--text-dim); }
+.detection-card .objs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+
+/* ─── Date range pills ─── */
+.date-pills { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.date-pill {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
+  padding: 4px 12px; border: 1px solid var(--border); border-radius: 14px;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.date-pill:hover { border-color: var(--cyan); color: var(--cyan); }
+.date-pill.active { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
+
+/* ─── Class filter pills ─── */
+.class-pills { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.class-pill {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.55rem;
+  padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: all 0.2s;
+}
+.class-pill:hover { border-color: var(--amber); color: var(--amber); }
+.class-pill.active { background: var(--amber); color: var(--bg); border-color: var(--amber); }
+.class-pill .cnt { opacity: 0.5; margin-left: 3px; }
+
+/* ─── Summary bar (detections tab) ─── */
+.summary-bar {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 0;
+}
+.summary-chip {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.6rem; padding: 4px 12px 4px 8px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
+}
+.summary-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.summary-chip .val { color: var(--amber); font-weight: 500; }
+
+/* ─── Lightbox ─── */
+.lightbox {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+  z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);
+  flex-direction: column;
+}
+.lightbox.open { display: flex; }
+.lightbox .lb-img-wrap { position: relative; display: flex; align-items: center; justify-content: center; max-width: 95vw; max-height: 85vh; }
+.lightbox img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 4px; box-shadow: 0 0 60px rgba(0,0,0,0.8); }
+.lightbox-close { position: absolute; top: 20px; right: 28px; font-size: 1.4rem; color: var(--text-dim); cursor: pointer; border: none; background: none; font-family: 'JetBrains Mono', monospace; transition: color 0.2s; z-index: 2; }
+.lightbox-close:hover { color: var(--amber); }
+.lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; background: rgba(255,255,255,0.04); border: none; color: #fff; font-size: 1.6rem; padding: 16px 10px; cursor: pointer; border-radius: 6px; font-family: 'JetBrains Mono', monospace; transition: background 0.2s; }
+.lightbox-nav:hover { background: rgba(255,255,255,0.1); }
+.lightbox-prev { left: 10px; }
+.lightbox-next { right: 10px; }
+.lightbox-info { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.35); font-size: 0.65rem; background: rgba(0,0,0,0.5); padding: 3px 12px; border-radius: 4px; white-space: nowrap; }
+
+/* ─── Empty / Loading ─── */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text-dim); text-align: center; }
+.empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+.empty-state p { font-size: 0.75rem; }
+.loading { display: flex; align-items: center; justify-content: center; padding: 40px; }
+.loading::after { content: ''; width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--amber); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Toast ─── */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 10px 18px; border-radius: 4px; font-size: 0.7rem; border: 1px solid; animation: toastIn 0.3s ease; font-family: 'JetBrains Mono', monospace; }
+.toast.success { background: rgba(68,221,170,0.1); border-color: var(--green); color: var(--green); }
+.toast.error { background: rgba(255,68,85,0.1); border-color: var(--red); color: var(--red); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ─── Responsive ─── */
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; }
+  .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 200px; }
+  .review-card { grid-template-columns: 120px 1fr; }
+  .review-thumb { width: 120px; height: 80px; }
+  .review-actions { grid-column: span 2; flex-direction: row; }
+  .detection-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+}
+
+@media (min-width: 901px) {
+  .header nav a { font-size: 0.95rem; padding: 8px 16px; }
+  .refresh-btn { font-size: 0.8rem; padding: 8px 18px; }
+  .tab-btn { font-size: 0.85rem; padding: 12px 24px; }
+  .stat-value { font-size: 2rem; }
+  .stat-label { font-size: 0.72rem; }
+  .review-thumb { width: 220px; height: 150px; }
+  .review-camera { font-size: 1rem; }
+  .review-time { font-size: 0.8rem; }
+  .reason-badge { font-size: 0.72rem; padding: 4px 12px; }
+  .btn-review { font-size: 0.72rem; padding: 8px 18px; }
+  .content-header h2 { font-size: 1.1rem; }
+  .count-badge { font-size: 0.8rem; padding: 5px 16px; }
+  .sidebar h3 { font-size: 0.8rem; }
+  .filter-group label { font-size: 0.72rem; }
+  .filter-group select, .filter-group input { font-size: 0.9rem; padding: 10px 12px; }
+  .date-pill { font-size: 0.72rem; padding: 6px 16px; }
+  .class-pill { font-size: 0.67rem; padding: 5px 14px; }
+  .detection-card .thumb { height: 170px; }
+  .detection-card .cam { font-size: 0.8rem; }
+  .detection-card .time { font-size: 0.67rem; }
+  .detection-tag { font-size: 0.72rem; padding: 3px 10px; }
+  .legend-item { font-size: 0.72rem; }
+  .summary-chip { font-size: 0.72rem; padding: 5px 14px 5px 10px; }
+  #loadMoreBtn { font-size: 0.8rem; padding: 12px 40px; }
+  .lightbox-nav { font-size: 2rem; padding: 20px 14px; }
+  .lightbox-close { font-size: 1.7rem; top: 24px; right: 32px; }
+  .lightbox-info { font-size: 0.8rem; padding: 5px 16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">◈ SENTINEL<span>//review</span></div>
+    <nav>
+      <a href="/index.html">Dashboard</a>
+      <a href="/reviews.html" class="active">Review</a>
+    </nav>
+  </div>
+  <button class="refresh-btn" onclick="loadAll()">⟳ refresh</button>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat stat-red">
+    <span class="stat-value" id="statPending">—</span>
+    <span class="stat-label">Pending</span>
+  </div>
+  <div class="stat stat-cyan">
+    <span class="stat-value" id="statPerson">—</span>
+    <span class="stat-label">Person Alerts</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="statUnexp">—</span>
+    <span class="stat-label">Unexpected</span>
+  </div>
+  <div class="stat stat-green">
+    <span class="stat-value" id="statCameras">—</span>
+    <span class="stat-label">Cameras</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="statToday">—</span>
+    <span class="stat-label">Detected Today</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar" id="sidebar">
+    <h3>Filters</h3>
+
+    <div class="filter-group">
+      <label for="filterCamera">Camera</label>
+      <select id="filterCamera" onchange="onCameraChange()">
+        <option value="all">All Cameras</option>
+      </select>
+    </div>
+
+    <div class="filter-group" id="filterReasonGroup">
+      <label for="filterReason">Reason</label>
+      <select id="filterReason" onchange="onReasonChange()">
+        <option value="all">All Reasons</option>
+        <option value="person_after_hours">Person After Hours</option>
+        <option value="high_person_count">High Person Count</option>
+        <option value="unexpected_objects">Unexpected Objects</option>
+      </select>
+    </div>
+
+    <div class="filter-group" id="filterClassGroup" style="display:none">
+      <label for="filterClass">Object Class</label>
+      <select id="filterClass" onchange="onClassChange()">
+        <option value="all">All Classes</option>
+      </select>
+    </div>
+
+    <div class="filter-group" id="filterDateGroup" style="display:none">
+      <label for="filterDays">Period</label>
+      <select id="filterDays" onchange="onDaysChange()">
+        <option value="0">Today</option>
+        <option value="1" selected>Last 2 Days</option>
+        <option value="3">Last 3 Days</option>
+        <option value="7">Last 7 Days</option>
+      </select>
+      <label for="filterDate" style="margin-top:6px">Or pick a day</label>
+      <input type="date" id="filterDate" onchange="onDateChange()">
+    </div>
+
+    <div class="filter-group">
+      <label>Detection Class Legend</label>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span> person</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--cyan)"></span> car</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span> train</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#bb88ff"></span> dog</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#66ddff"></span> bicycle</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#88dd88"></span> bird</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#ddaa66"></span> bench</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#ff88aa"></span> motorcycle</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#ffaa66"></span> skateboard</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#66aaff"></span> parking meter</span>
+      </div>
+    </div>
+
+    <div class="filter-group" style="margin-top:16px">
+      <h3 style="border:none; margin-bottom:4px">Today's Summary</h3>
+      <div id="detectionSummary" style="font-size:0.65rem; color:var(--text-dim); line-height:1.8">Loading...</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('reviews')" id="tabBtn-reviews">⚠ Pending</button>
+      <button class="tab-btn" onclick="switchTab('detections')" id="tabBtn-detections">◈ All Detections</button>
+    </div>
+
+    <!-- PENDING REVIEWS TAB -->
+    <div class="tab-content active" id="tab-reviews">
+      <div class="content-header">
+        <h2>Pending Reviews <span class="count-badge" id="reviewCount">0</span></h2>
+      </div>
+      <div id="reviewList"><div class="loading"></div></div>
+    </div>
+
+    <!-- ALL DETECTIONS TAB -->
+    <div class="tab-content" id="tab-detections">
+      <div class="content-header">
+        <h2>All Detected Objects</h2>
+      </div>
+      <div id="summaryBar" class="summary-bar"></div>
+      <div id="datePills" class="date-pills"></div>
+      <div id="classPills" class="class-pills"></div>
+      <div id="detectionsList"><div class="loading"></div></div>
+      <div id="loadMoreContainer" style="display:none; text-align:center; padding:20px">
+        <button class="btn-review btn-view" onclick="loadMoreDetections()" id="loadMoreBtn" style="padding:10px 32px">⟳ Load More</button>
+        <div class="loading" id="loadMoreSpinner" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button class="lightbox-nav lightbox-prev" id="lbPrev" onclick="lbPrev()">‹</button>
+  <div class="lb-img-wrap"><img id="lightboxImg" src="" alt="Snapshot"></div>
+  <button class="lightbox-nav lightbox-next" id="lbNext" onclick="lbNext()">›</button>
+  <div class="lightbox-info" id="lbInfo"></div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API = {
+  reviews: '/api/reviews/pending',
+  reviewCount: '/api/reviews/count',
+  reviewAction: (id) => `/api/reviews/${id}/review`,
+  report: (date) => `/api/report/${date}`,
+  manifest: '/data/manifest.json',
+  detections: '/api/reviews/detections',
+};
+
+let allReviews = [];
+let filteredReviews = [];
+let detectionStats = {};
+let allDetections = [];  // flat list of {snap, analysis, camName}
+let filteredDetections = [];
+let activeTab = 'reviews';
+let cameras = [];
+let detectionsLoaded = false;
+let detectionsPage = 0;
+const DETECTIONS_PAGE_SIZE = 30;
+let detectionsTotal = 0;
+
+function dateStr(d) { return d.toISOString().split('T')[0]; }
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('en-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtTimeShort(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('en-MX', { hour: '2-digit', minute: '2-digit' });
+}
+
+function reasonClass(reason) {
+  if (!reason) return '';
+  if (reason.startsWith('person_after_hours')) return 'person-after-hours';
+  if (reason.startsWith('high_person_count')) return 'high-count';
+  if (reason.startsWith('unexpected_objects')) return 'unexpected-objects';
+  return '';
+}
+
+function reasonLabel(reason) {
+  if (!reason) return 'Flagged';
+  if (reason.startsWith('person_after_hours')) return '🚶 Person After Hours';
+  if (reason.startsWith('high_person_count')) return '👥 High Person Count';
+  if (reason.startsWith('unexpected_objects')) return '⚠ ' + reason.replace('unexpected_objects:', '');
+  return reason;
+}
+
+function tagClass(cls) {
+  const safe = ['person','car','train','dog','bicycle','bird','bench','cat','truck','motorcycle','skateboard','sheep','parking meter'];
+  return safe.includes(cls) ? cls.replace(' ', ' ') : 'other';
+}
+
+/* ─── Tab Switching ─── */
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById(`tabBtn-${tab}`).classList.add('active');
+  document.getElementById(`tab-${tab}`).classList.add('active');
+
+  // Toggle sidebar filters
+  document.getElementById('filterReasonGroup').style.display = tab === 'reviews' ? 'block' : 'none';
+  document.getElementById('filterClassGroup').style.display = tab === 'detections' ? 'block' : 'none';
+  document.getElementById('filterDateGroup').style.display = tab === 'detections' ? 'block' : 'none';
+
+  if (tab === 'detections' && !detectionsLoaded) {
+    loadDetections();
+  }
+}
+
+/* ─── Load Reviews ─── */
+async function loadReviews() {
+  try {
+    const [reviews, countRes] = await Promise.all([
+      fetch(API.reviews).then(r => r.json()),
+      fetch(API.reviewCount).then(r => r.json()),
+    ]);
+    allReviews = reviews;
+    document.getElementById('reviewCount').textContent = countRes.count ?? allReviews.length;
+    filterReviews();
+  } catch (e) {
+    document.getElementById('reviewList').innerHTML =
+      `<div class="empty-state"><div class="icon">⚠</div><p>Failed to load reviews.</p></div>`;
+  }
+}
+
+/* ─── Load Detections from API (lazy, paginated) ─── */
+async function loadDetections(reset = true) {
+  if (reset) {
+    detectionsPage = 0;
+    allDetections = [];
+    detectionsLoaded = false;
+    document.getElementById('detectionsList').innerHTML = '<div class="loading"></div>';
+    document.getElementById('loadMoreContainer').style.display = 'none';
+  }
+
+  const days = parseInt(document.getElementById('filterDays').value);
+  const camFilter = document.getElementById('filterCamera').value;
+  const specificDate = document.getElementById('filterDate').value;
+
+  let url;
+  if (specificDate) {
+    url = `${API.detections}?date_from=${specificDate}&limit=${DETECTIONS_PAGE_SIZE}&offset=${detectionsPage * DETECTIONS_PAGE_SIZE}`;
+  } else {
+    url = `${API.detections}?days_back=${days}&limit=${DETECTIONS_PAGE_SIZE}&offset=${detectionsPage * DETECTIONS_PAGE_SIZE}`;
+  }
+  if (camFilter !== 'all') url += `&camera_id=${camFilter}`;
+
+  try {
+    const res = await fetch(url);
+    const items = await res.json();
+    if (items.length > 0) {
+      allDetections.push(...items.map(d => ({
+        analysis: d,
+        snap: { image_path: d.image_path, captured_at: d.captured_at },
+        camName: d.camera_name,
+        camera_id: d.camera_id,
+      })));
+      detectionsPage++;
+    }
+    detectionsLoaded = true;
+    const hasMore = items.length >= DETECTIONS_PAGE_SIZE;
+    document.getElementById('loadMoreContainer').style.display = hasMore ? 'block' : 'none';
+  } catch (_) {
+    allDetections = [];
+    detectionsLoaded = true;
+  }
+  filterDetections();
+}
+
+async function loadMoreDetections() {
+  document.getElementById('loadMoreBtn').style.display = 'none';
+  document.getElementById('loadMoreSpinner').style.display = 'flex';
+  await loadDetections(false);
+  document.getElementById('loadMoreBtn').style.display = 'inline-block';
+  document.getElementById('loadMoreSpinner').style.display = 'none';
+}
+function buildDetectionsFilterState() {
+  const { camera, cls, activeDates } = getFilters();
+  return { camera, cls, activeDates };
+}
+
+function applyAllFilters(items, camera, cls, activeDates) {
+  if (camera !== 'all') items = items.filter(d => d.camera_id === parseInt(camera));
+  if (cls !== 'all') {
+    items = items.filter(d => {
+      const objs = parseDetections(d.analysis);
+      return objs.some(o => o.class_name === cls);
+    });
+  }
+  if (activeDates.length > 0) {
+    items = items.filter(d => {
+      const dt = d.snap.captured_at ? d.snap.captured_at.split('T')[0] : '';
+      return activeDates.includes(dt);
+    });
+  }
+  return items;
+}
+
+function filterDetections() {
+  const { camera, cls, activeDates } = getFilters();
+  filteredDetections = applyAllFilters(allDetections, camera, cls, activeDates);
+  renderDetections(filteredDetections);
+  renderSummaryBar(filteredDetections);
+  renderDatePills(allDetections);
+  renderClassPills(allDetections);
+}
+
+/* ─── Render Summary Bar ─── */
+function renderSummaryBar(items) {
+  const clsCounts = {};
+  for (const d of items) {
+    const objs = parseDetections(d.analysis);
+    for (const o of objs) {
+      clsCounts[o.class_name] = (clsCounts[o.class_name] || 0) + 1;
+    }
+  }
+  const entries = Object.entries(clsCounts).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((s, [, n]) => s + n, 0);
+  const container = document.getElementById('summaryBar');
+  container.innerHTML = `
+    <div class="summary-chip">
+      <span class="val">${filteredDetections.length}</span> snapshots with detections
+    </div>
+    <div class="summary-chip">
+      <span class="val">${total}</span> total objects
+    </div>
+    ${entries.slice(0, 8).map(([cls, n]) =>
+      `<div class="summary-chip">
+        <span class="dot" style="background:${clsColor(cls)}"></span>
+        ${cls} <span class="val">${n}</span>
+      </div>`
+    ).join('')}
+    ${entries.length > 8 ? `<div class="summary-chip">+${entries.length - 8} more</div>` : ''}
+  `;
+}
+
+function clsColor(cls) {
+  const map = {
+    'person': 'var(--amber)', 'car': 'var(--cyan)', 'train': 'var(--red)',
+    'dog': '#bb88ff', 'bicycle': '#66ddff', 'bird': '#88dd88', 'bench': '#ddaa66',
+    'motorcycle': '#ff88aa', 'skateboard': '#ffaa66', 'parking meter': '#66aaff',
+    'sheep': '#ddddaa', 'truck': '#88aacc', 'cat': '#dd88aa',
+  };
+  return map[cls] || 'var(--text-dim)';
+}
+
+/* ─── Render Date Pills ─── */
+function renderDatePills(items) {
+  const dates = [...new Set(items.map(d =>
+    d.snap.captured_at ? d.snap.captured_at.split('T')[0] : ''
+  ))].filter(Boolean).sort().reverse();
+  const container = document.getElementById('datePills');
+  container.innerHTML = dates.map(d =>
+    `<button class="date-pill active" onclick="toggleDatePill(this)">${d}</button>`
+  ).join('');
+}
+
+/* ─── Render Class Pills ─── */
+function renderClassPills(items) {
+  const clsCounts = {};
+  for (const d of items) {
+    const objs = parseDetections(d.analysis);
+    for (const o of objs) {
+      clsCounts[o.class_name] = (clsCounts[o.class_name] || 0) + 1;
+    }
+  }
+  const sel = document.getElementById('filterClass');
+  const curVal = sel.value;
+  sel.innerHTML = '<option value="all">All Classes</option>';
+  for (const [cls] of Object.entries(clsCounts).sort()) {
+    const opt = document.createElement('option');
+    opt.value = cls;
+    opt.textContent = cls;
+    sel.appendChild(opt);
+  }
+  sel.value = curVal;
+
+  // Render pills
+  const entries = Object.entries(clsCounts).sort((a, b) => b[1] - a[1]);
+  const container = document.getElementById('classPills');
+  container.innerHTML = entries.map(([cls, n]) =>
+    `<button class="class-pill ${curVal === cls ? 'active' : ''}" onclick="filterByClass('${cls}')" data-class="${cls}">
+      ${cls} <span class="cnt">${n}</span>
+    </button>`
+  ).join('');
+}
+
+function filterByClass(cls) {
+  const sel = document.getElementById('filterClass');
+  sel.value = cls === sel.value ? 'all' : cls;
+  filterDetections();
+}
+
+/* ─── Render Detections Grid ─── */
+function renderDetections(items) {
+  const container = document.getElementById('detectionsList');
+
+  if (items.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">◈</div><p>No detections match filters</p></div>`;
+    return;
+  }
+
+  let html = '<div class="detection-grid">';
+  // Sort by most recent first
+  items.sort((a, b) => new Date(b.snap.captured_at) - new Date(a.snap.captured_at));
+
+  for (const d of items) {
+    const objs = parseDetections(d.analysis);
+    const tags = objs.map(o =>
+      `<span class="detection-tag ${tagClass(o.class_name)}">
+        ${o.class_name} <span class="conf">${(o.confidence * 100).toFixed(0)}%</span>
+      </span>`
+    ).join('');
+
+    const flagged = d.analysis.review_required
+      ? `<span class="reason-badge ${reasonClass(d.analysis.review_reason)}" style="font-size:0.5rem;padding:2px 6px">⚠</span>`
+      : '';
+
+    html += `
+      <div class="detection-card">
+        <img class="thumb" src="/snapshots/${d.snap.image_path}" alt=""
+             onclick="openLightbox('/snapshots/${d.snap.image_path}')"
+             onerror="this.style.display='none'">
+        <div class="meta">
+          <span class="cam">${d.camName} ${flagged}</span>
+          <span class="time">${fmtTimeShort(d.snap.captured_at)}</span>
+        </div>
+        <div class="objs">${tags}</div>
+      </div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+/* ─── Parse detections from JSON ─── */
+function parseDetections(analysis) {
+  if (!analysis || !analysis.objects_json) return [];
+  try { return JSON.parse(analysis.objects_json); }
+  catch (_) { return []; }
+}
+
+/* ─── Unified Filtering ─── */
+
+// Get current filter state across all controls
+function getFilters() {
+  return {
+    camera: document.getElementById('filterCamera').value,
+    reason: document.getElementById('filterReason').value,
+    cls: document.getElementById('filterClass').value,
+    activeDates: [...document.querySelectorAll('#datePills .date-pill.active')].map(el => el.textContent),
+  };
+}
+
+// Called when camera dropdown changes
+function onCameraChange() {
+  if (activeTab === 'reviews') filterReviews();
+  else rebuildDetections();
+}
+
+// Called when reason dropdown changes
+function onReasonChange() {
+  filterReviews();
+}
+
+// Called when class dropdown changes
+function onClassChange() {
+  rebuildDetections();
+}
+
+// Called when days-back dropdown changes
+function onDaysChange() {
+  document.getElementById('filterDate').value = '';
+  loadDetections(true);
+}
+
+// Called when date input changes
+function onDateChange() {
+  loadDetections(true);
+}
+
+/* ─── Review Filters ─── */
+
+function filterReviews() {
+  const { camera, reason } = getFilters();
+  filteredReviews = allReviews.filter(r => {
+    if (camera !== 'all' && r.camera_id !== parseInt(camera)) return false;
+    if (reason !== 'all') {
+      const rsn = (r.review_reason || '').toLowerCase();
+      if (reason === 'person_after_hours' && !rsn.includes('person_after_hours')) return false;
+      if (reason === 'high_person_count' && !rsn.includes('high_person_count')) return false;
+      if (reason === 'unexpected_objects' && !rsn.includes('unexpected_objects')) return false;
+    }
+    return true;
+  });
+  renderReviews(filteredReviews);
+  updateStats(filteredReviews);
+}
+
+function updateStats(items) {
+  const total = items.length;
+  const persons = items.filter(r => (r.review_reason || '').includes('person_after_hours')).length;
+  const unexp = items.filter(r => (r.review_reason || '').includes('unexpected_objects')).length;
+  document.getElementById('statPending').textContent = total;
+  document.getElementById('statPerson').textContent = persons;
+  document.getElementById('statUnexp').textContent = unexp;
+}
+
+/* ─── Detection Filters ─── */
+
+// Full rebuild respecting all current filter state
+function rebuildDetections() {
+  const { camera, cls, activeDates } = getFilters();
+
+  let items = allDetections;
+
+  // Camera filter
+  if (camera !== 'all') {
+    items = items.filter(d => d.camera_id === parseInt(camera));
+  }
+
+  // Class filter
+  if (cls !== 'all') {
+    items = items.filter(d => {
+      const objs = parseDetections(d.analysis);
+      return objs.some(o => o.class_name === cls);
+    });
+  }
+
+  // Date filter
+  if (activeDates.length > 0) {
+    items = items.filter(d => {
+      const dt = d.snap.captured_at ? d.snap.captured_at.split('T')[0] : '';
+      return activeDates.includes(dt);
+    });
+  }
+
+  filteredDetections = items;
+  renderDetections(filteredDetections);
+  renderSummaryBar(filteredDetections);
+}
+
+// Toggle date pill and re-filter
+function toggleDatePill(el) {
+  el.classList.toggle('active');
+  rebuildDetections();
+}
+
+// Click class pill
+function filterByClass(cls) {
+  const sel = document.getElementById('filterClass');
+  sel.value = cls === sel.value ? 'all' : cls;
+  rebuildDetections();
+}
+
+/* ─── Render Review Cards ─── */
+function renderReviews(items) {
+  const container = document.getElementById('reviewList');
+  if (items.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">✓</div><p>No pending reviews matching filters</p></div>`;
+    return;
+  }
+  let html = '<div class="review-list">';
+  for (const r of items) {
+    const detections = parseDetections(r);
+    const tags = detections.map(d =>
+      `<span class="detection-tag ${tagClass(d.class_name)}">
+        ${d.class_name} <span class="conf">${(d.confidence * 100).toFixed(0)}%</span>
+      </span>`
+    ).join('');
+    const reasonCls = reasonClass(r.review_reason);
+    const rsn = reasonLabel(r.review_reason);
+    const idx = items.indexOf(r);
+    html += `
+      <div class="review-card" id="card-${r.analysis_id}">
+        <img class="review-thumb" src="/snapshots/${r.image_path}" alt=""
+             onclick="openLightbox('/snapshots/${r.image_path}', filteredReviews, ${idx})"
+             onerror="this.style.display='none'">
+        <div class="review-info">
+          <div class="review-camera">${r.camera_name || 'Camera ' + r.camera_id}</div>
+          <div class="review-time">${fmtTime(r.captured_at)}</div>
+          <div><span class="reason-badge ${reasonCls}">${rsn}</span></div>
+          <div class="detection-tags">${tags || '<span style="font-size:0.6rem;color:var(--text-dim)">No objects</span>'}</div>
+          ${r.person_count > 0 ? `<div style="font-size:0.6rem;color:var(--amber)">${r.person_count} person(s)</div>` : ''}
+        </div>
+        <div class="review-actions">
+          <button class="btn-review btn-approve" onclick="markReviewed(${r.analysis_id}, false)">✓ Approve</button>
+          <button class="btn-review btn-dismiss" onclick="markReviewed(${r.analysis_id}, false, 'false_positive')">✕ Dismiss</button>
+          <button class="btn-review btn-view" onclick="openLightbox('/snapshots/${r.image_path}', filteredReviews, ${idx})">🔍 View</button>
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+async function markReviewed(analysisId, reviewRequired, reason) {
+  try {
+    const body = { review_required: reviewRequired };
+    if (reason) body.review_reason = reason;
+    const res = await fetch(API.reviewAction(analysisId), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showToast('Marked as reviewed', 'success');
+    const card = document.getElementById(`card-${analysisId}`);
+    if (card) {
+      card.style.transition = 'all 0.3s';
+      card.style.opacity = '0';
+      card.style.transform = 'translateX(20px)';
+      setTimeout(() => loadAll(), 300);
+    } else {
+      loadAll();
+    }
+  } catch (e) {
+    showToast(`Failed: ${e.message}`, 'error');
+  }
+}
+
+/* ─── Stats ─── */
+async function loadStats() {
+  try {
+    const specificDate = document.getElementById('filterDate').value;
+    const statsUrl = specificDate
+      ? `${API.detections}?date_from=${specificDate}&limit=500`
+      : `${API.detections}?days_back=0&limit=500`;
+    const res = await fetch(statsUrl);
+    const items = await res.json();
+    let totalDetected = 0;
+    const clsCounts = {};
+    for (const d of items) {
+      if (d.objects_json) {
+        try {
+          const objs = JSON.parse(d.objects_json);
+          totalDetected += objs.length;
+          for (const o of objs) clsCounts[o.class_name] = (clsCounts[o.class_name] || 0) + 1;
+        } catch (_) {}
+      }
+    }
+    detectionStats = clsCounts;
+    const cams = new Set(items.map(d => d.camera_id)).size;
+    document.getElementById('statToday').textContent = totalDetected;
+    document.getElementById('statCameras').textContent = cams;
+
+    const entries = Object.entries(clsCounts).sort((a, b) => b[1] - a[1]);
+    document.getElementById('detectionSummary').innerHTML = entries.length
+      ? entries.slice(0, 6).map(([cls, n]) =>
+          `<div style="display:flex;justify-content:space-between;padding:2px 0">
+            <span>${cls}</span><span style="color:var(--amber)">${n}</span>
+          </div>`
+        ).join('')
+      : '<span>No detections today</span>';
+  } catch (_) {}
+}
+
+/* ─── Cameras ─── */
+async function loadCameras() {
+  try {
+    const res = await fetch(API.manifest);
+    const data = await res.json();
+    cameras = data.cameras || [];
+    const sel = document.getElementById('filterCamera');
+    for (const cam of cameras) {
+      const opt = document.createElement('option');
+      opt.value = cam.id;
+      opt.textContent = cam.name || `Camera ${cam.id}`;
+      sel.appendChild(opt);
+    }
+  } catch (_) {}
+}
+
+/* ─── Lightbox ─── */
+let reviewLBItems = [];
+let reviewLBIndex = 0;
+
+function openLightbox(src, items, index) {
+  reviewLBItems = items || [];
+  reviewLBIndex = index || 0;
+  const img = document.getElementById('lightboxImg');
+  img.src = src;
+  document.getElementById('lightbox').classList.add('open');
+  updateLBButtons();
+  updateLBInfo();
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  reviewLBItems = [];
+}
+function updateLBButtons() {
+  const hasPrev = reviewLBItems.length > 0 && reviewLBIndex > 0;
+  const hasNext = reviewLBItems.length > 0 && reviewLBIndex < reviewLBItems.length - 1;
+  document.getElementById('lbPrev').style.display = hasPrev ? '' : 'none';
+  document.getElementById('lbNext').style.display = hasNext ? '' : 'none';
+}
+function updateLBInfo() {
+  const el = document.getElementById('lbInfo');
+  if (reviewLBItems.length > 1) {
+    el.textContent = `${reviewLBIndex + 1} / ${reviewLBItems.length}`;
+  } else {
+    el.textContent = '';
+  }
+}
+function lbPrev() {
+  if (reviewLBIndex <= 0) return;
+  reviewLBIndex--;
+  const item = reviewLBItems[reviewLBIndex];
+  document.getElementById('lightboxImg').src = `/snapshots/${item.image_path}`;
+  updateLBButtons();
+  updateLBInfo();
+}
+function lbNext() {
+  if (reviewLBIndex >= reviewLBItems.length - 1) return;
+  reviewLBIndex++;
+  const item = reviewLBItems[reviewLBIndex];
+  document.getElementById('lightboxImg').src = `/snapshots/${item.image_path}`;
+  updateLBButtons();
+  updateLBInfo();
+}
+
+/* ─── Toast ─── */
+function showToast(msg, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; }, 2500);
+  setTimeout(() => el.remove(), 3000);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('lightbox').classList.contains('open')) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); lbPrev(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); lbNext(); }
+    if (e.key === 'Escape') closeLightbox();
+  }
+});
+
+function loadAll() {
+  loadReviews();
+  loadStats();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadCameras();
+  loadAll();
+  setInterval(() => loadReviews(), 15000);
+  setInterval(() => loadStats(), 60000);
+});
+</script>
+</body>
+</html>

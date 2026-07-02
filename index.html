@@ -462,6 +462,24 @@
     .panel .grip { display: none; }
     .panel .p-head { padding: 10px 14px 2px; }
     .panel .p-body { padding: 0 12px 12px; }
+    .panel .btn-vid { font-size: 13px; padding: 7px 14px; }
+    .panel .btn-vid.day { font-size: 13px; padding: 7px 14px; }
+    .panel .p-head h2 { font-size: 20px; }
+    .panel .p-head .close-p { width: 40px; height: 40px; font-size: 20px; }
+    .panel .tool-group { padding: 4px 7px 4px 11px; }
+    .panel .tool-group label { font-size: 12px; }
+    .panel .tool-group input[type="date"] { font-size: 15px; min-width: 130px; }
+    .panel .tool-group select { font-size: 15px; }
+    .hour-h { font-size: 14px; padding: 14px 2px 4px; }
+    .hour-h .cnt { font-size: 11px; }
+    .hour-h .btn-vid-s { padding: 4px 12px; font-size: 11px; }
+    .pag button { padding: 7px 16px; font-size: 14px; min-width: 80px; }
+    .pag .info { font-size: 13px; }
+    .snap-item .stamp { font-size: 11px; padding: 1rem 6px 4px 6px; }
+    .lb .lb-close { width: 46px; height: 46px; font-size: 23px; }
+    .lb .lb-nav { font-size: 26px; padding: 20px 12px; }
+    .lb .lb-info { font-size: 14px; padding: 5px 16px; bottom: 50px; }
+    .stat-p { font-size: 13px; padding: 6px 12px; }
   }
 
   /* ── Lightbox ──────────────────────────────────────────────── */
@@ -539,7 +557,13 @@
     </div>
     <div class="header">
       <h1><span class="marker"></span>Sentinel</h1>
-      <div class="sub" id="updateTime">—</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <a href="/reviews.html" id="reviewLink" style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--amber);border:1px solid var(--amber);padding:4px 12px;border-radius:4px;text-decoration:none;transition:all 0.2s"
+           onmouseover="this.style.background='rgba(255,176,0,0.1)'" onmouseout="this.style.background='transparent'">
+          Review <span id="reviewBadge" style="background:var(--amber);color:#000;padding:1px 6px;border-radius:8px;margin-left:4px;font-size:0.6rem">0</span>
+        </a>
+        <div class="sub" id="updateTime">—</div>
+      </div>
     </div>
     <div class="cameras" id="camGrid"></div>
   </div>
@@ -625,6 +649,8 @@ async function loadManifest() {
       cam._dateCounts[d] = snaps.length;
     }
   }
+  const badge = document.getElementById('reviewBadge');
+  if (badge) badge.textContent = manifest.review_count ?? 0;
 }
 
 function renderDashboard() {
