@@ -396,14 +396,7 @@ a:hover { color: var(--amber); }
     </div>
 
     <div class="filter-group" id="filterDateGroup" style="display:none">
-      <label for="filterDays">Period</label>
-      <select id="filterDays" onchange="onDaysChange()">
-        <option value="0">Today</option>
-        <option value="1" selected>Last 2 Days</option>
-        <option value="3">Last 3 Days</option>
-        <option value="7">Last 7 Days</option>
-      </select>
-      <label for="filterDate" style="margin-top:6px">Or pick a day</label>
+      <label for="filterDate">Pick a day</label>
       <input type="date" id="filterDate" onchange="onDateChange()">
     </div>
 
@@ -520,6 +513,11 @@ function reasonLabel(reason) {
   return reason;
 }
 
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
 function tagClass(cls) {
   const safe = ['person','car','train','dog','bicycle','bird','bench','cat','truck','motorcycle','skateboard','sheep','parking meter'];
   return safe.includes(cls) ? cls.replace(' ', ' ') : 'other';
@@ -569,16 +567,10 @@ async function loadDetections(reset = true) {
     document.getElementById('loadMoreContainer').style.display = 'none';
   }
 
-  const days = parseInt(document.getElementById('filterDays').value);
   const camFilter = document.getElementById('filterCamera').value;
-  const specificDate = document.getElementById('filterDate').value;
+  const dateVal = document.getElementById('filterDate').value || todayStr();
 
-  let url;
-  if (specificDate) {
-    url = `${API.detections}?date_from=${specificDate}&limit=${DETECTIONS_PAGE_SIZE}&offset=${detectionsPage * DETECTIONS_PAGE_SIZE}`;
-  } else {
-    url = `${API.detections}?days_back=${days}&limit=${DETECTIONS_PAGE_SIZE}&offset=${detectionsPage * DETECTIONS_PAGE_SIZE}`;
-  }
+  let url = `${API.detections}?date_from=${dateVal}&limit=${DETECTIONS_PAGE_SIZE}&offset=${detectionsPage * DETECTIONS_PAGE_SIZE}`;
   if (camFilter !== 'all') url += `&camera_id=${camFilter}`;
 
   try {
@@ -803,12 +795,6 @@ function onClassChange() {
   rebuildDetections();
 }
 
-// Called when days-back dropdown changes
-function onDaysChange() {
-  document.getElementById('filterDate').value = '';
-  loadDetections(true);
-}
-
 // Called when date input changes
 function onDateChange() {
   loadDetections(true);
@@ -957,10 +943,8 @@ async function markReviewed(analysisId, reviewRequired, reason) {
 /* ─── Stats ─── */
 async function loadStats() {
   try {
-    const specificDate = document.getElementById('filterDate').value;
-    const statsUrl = specificDate
-      ? `${API.detections}?date_from=${specificDate}&limit=500`
-      : `${API.detections}?days_back=0&limit=500`;
+    const dateVal = document.getElementById('filterDate').value || todayStr();
+    const statsUrl = `${API.detections}?date_from=${dateVal}&limit=500`;
     const res = await fetch(statsUrl);
     const items = await res.json();
     let totalDetected = 0;
@@ -1080,6 +1064,7 @@ function loadAll() {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadCameras();
+  document.getElementById('filterDate').value = todayStr();
   loadAll();
   setInterval(() => loadReviews(), 15000);
   setInterval(() => loadStats(), 60000);
