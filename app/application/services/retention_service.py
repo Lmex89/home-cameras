@@ -92,6 +92,13 @@ class RetentionService:
                 for snap in group:
                     src = settings.snapshots_dir / snap.image_path
                     if not src.exists():
+                        logger.warning(
+                            f"Snapshot {snap.id} file missing on disk: {src}; "
+                            "marking as archived to skip future retention passes"
+                        )
+                        await self._uow.snapshots.update_archive_path(
+                            snap.id, f"{zip_rel}::<missing>"
+                        )
                         continue
                     arcname = src.name
                     if arcname not in zf.namelist():
