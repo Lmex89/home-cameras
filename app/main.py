@@ -21,7 +21,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
-from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead
+from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead, RetentionResultRead
 
 os.environ["TZ"] = settings.timezone
 try:
@@ -216,9 +216,23 @@ async def serve_manifest():
         }
 
 
-@app.post("/api/retention/run")
+@app.post("/api/retention/run", response_model=RetentionResultRead)
 async def trigger_retention():
-    """Trigger the retention/archive job immediately."""
+    """Trigger the retention/archive cleanup job immediately.
+
+    Runs the same pipeline as the daily 03:00 cron: zips snapshots
+    and videos older than the zip threshold, then deletes records
+    and archives past the retention threshold.
+
+    \f
+    **Notes:**
+    - Safe to call concurrently with the cron job; archive ZIPs use
+      append mode and deduplicate entries by filename.
+    - Returns counts for each step of the retention lifecycle.
+
+    Returns:
+        RetentionResultRead with per-step counts.
+    """
     from app.core.database import session_factory as _sf
     from app.application.services.retention_service import RetentionService
 
@@ -226,4 +240,4 @@ async def trigger_retention():
         svc = RetentionService(uow)
         result = await svc.run()
         logger.info(f"Manual retention run: {result}")
-        return result
+        return RetentionResultRead.model_validate(result)

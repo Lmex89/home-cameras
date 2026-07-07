@@ -158,6 +158,19 @@ class AnalysisReviewUpdate(BaseModel):
     review_reason: str | None = None
 
 
+class RetentionResultRead(BaseModel):
+    """Serialize the outcome of a retention/archive cleanup run.
+
+    All counts are non-negative integers describing how many items
+    were processed in each step of the retention lifecycle.
+    """
+
+    snapshots_zipped: int = Field(default=0, ge=0)
+    snapshots_deleted: int = Field(default=0, ge=0)
+    videos_archived: int = Field(default=0, ge=0)
+    videos_deleted: int = Field(default=0, ge=0)
+
+
 class PendingReviewItem(BaseModel):
     """A snapshot flagged for human review with its metadata."""
 
