@@ -196,8 +196,8 @@ async def serve_manifest():
             )
             snapshots.setdefault(cam_id, {}).setdefault(d, []).append(snap_dict)
 
-        from app.application.services.analysis_service import AnalysisService
-        analysis_service = AnalysisService(uow)
+        from app.application.services.analysis_service import AnalysisService as _As
+        analysis_service = _As(uow)
         pending_reviews = await analysis_service.get_pending_reviews(limit=100)
         review_count = len(pending_reviews)
 
@@ -214,3 +214,16 @@ async def serve_manifest():
             "pending_reviews": pending_reviews[:10],
             "review_count": review_count,
         }
+
+
+@app.post("/api/retention/run")
+async def trigger_retention():
+    """Trigger the retention/archive job immediately."""
+    from app.core.database import session_factory as _sf
+    from app.application.services.retention_service import RetentionService
+
+    async with UnitOfWork(_sf) as uow:
+        svc = RetentionService(uow)
+        result = await svc.run()
+        logger.info(f"Manual retention run: {result}")
+        return result
