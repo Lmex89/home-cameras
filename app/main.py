@@ -143,7 +143,6 @@ async def serve_reviews_page():
     Returns:
         The contents of the project-root reviews.html file.
     """
-    import os
     path = Path(__file__).resolve().parent.parent / "reviews.html"
     if not path.exists():
         return HTMLResponse("<h1>Not Found</h1><p>reviews.html not deployed</p>", status_code=404)

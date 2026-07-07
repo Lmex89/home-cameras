@@ -140,10 +140,15 @@ a:hover { color: var(--amber); }
 }
 .refresh-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,170,0.06); }
 
+/* ─── Bulk Selection ─── */
+.bulk-checkbox { accent-color: var(--amber); cursor: pointer; width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
+.select-all-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.select-all-wrap label { font-size: 0.65rem; color: var(--text-dim); cursor: pointer; }
+
 /* ─── Review Cards ─── */
 .review-list { display: flex; flex-direction: column; gap: 12px; }
 .review-card {
-  display: grid; grid-template-columns: 180px 1fr auto; gap: 16px;
+  display: grid; grid-template-columns: 24px 180px 1fr auto; gap: 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
   padding: 12px; transition: all 0.2s; cursor: default; position: relative;
 }
@@ -294,7 +299,7 @@ a:hover { color: var(--amber); }
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 200px; }
-  .review-card { grid-template-columns: 120px 1fr; }
+  .review-card { grid-template-columns: 24px 120px 1fr; }
   .review-thumb { width: 120px; height: 80px; }
   .review-actions { grid-column: span 2; flex-direction: row; }
   .detection-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
@@ -432,6 +437,12 @@ a:hover { color: var(--amber); }
     <div class="tab-content active" id="tab-reviews">
       <div class="content-header">
         <h2>Pending Reviews <span class="count-badge" id="reviewCount">0</span></h2>
+      </div>
+      <div id="bulkBar" style="display:none;padding:10px 0;border-bottom:1px solid var(--border);margin-bottom:12px">
+        <span id="bulkCount" style="font-size:0.7rem;color:var(--text-dim)">0 selected</span>
+        <button class="btn-review btn-approve" onclick="bulkAction(false)" style="margin-left:12px">✓ Approve All</button>
+        <button class="btn-review btn-dismiss" onclick="bulkAction(false,'false_positive')" style="margin-left:6px">✕ Dismiss All</button>
+        <button class="btn-review btn-view" onclick="deselectAll()" style="margin-left:6px">Clear</button>
       </div>
       <div id="reviewList"><div class="loading"></div></div>
     </div>
@@ -881,7 +892,7 @@ function renderReviews(items) {
     container.innerHTML = `<div class="empty-state"><div class="icon">✓</div><p>No pending reviews matching filters</p></div>`;
     return;
   }
-  let html = '<div class="review-list">';
+  let html = '<div class="select-all-wrap"><input type="checkbox" class="bulk-checkbox" id="selectAll" onchange="toggleSelectAll(this)"><label for="selectAll">Select All</label></div><div class="review-list">';
   for (const r of items) {
     const detections = parseDetections(r);
     const tags = detections.map(d =>
@@ -894,8 +905,10 @@ function renderReviews(items) {
     const idx = items.indexOf(r);
     html += `
       <div class="review-card" id="card-${r.analysis_id}">
+        <input type="checkbox" class="bulk-checkbox" id="cb-${r.analysis_id}"
+               onchange="updateBulkBar()" value="${r.analysis_id}">
         <img class="review-thumb" src="/snapshots/${r.image_path}" alt=""
-             onclick="openLightbox('/snapshots/${r.image_path}', filteredReviews, ${idx})"
+             onclick="openLightbox('/snapshots/${r.image_path}')"
              onerror="this.style.display='none'">
         <div class="review-info">
           <div class="review-camera">${r.camera_name || 'Camera ' + r.camera_id}</div>
@@ -905,9 +918,9 @@ function renderReviews(items) {
           ${r.person_count > 0 ? `<div style="font-size:0.6rem;color:var(--amber)">${r.person_count} person(s)</div>` : ''}
         </div>
         <div class="review-actions">
-          <button class="btn-review btn-approve" onclick="markReviewed(${r.analysis_id}, false)">✓ Approve</button>
+          <button class="btn-review btn-approve" onclick="markReviewed(${r.analysis_id}, false)">✓ App</button>
           <button class="btn-review btn-dismiss" onclick="markReviewed(${r.analysis_id}, false, 'false_positive')">✕ Dismiss</button>
-          <button class="btn-review btn-view" onclick="openLightbox('/snapshots/${r.image_path}', filteredReviews, ${idx})">🔍 View</button>
+          <button class="btn-review btn-view" onclick="openLightbox('/snapshots/${r.image_path}')">🔍 View</button>
         </div>
       </div>`;
   }
@@ -1057,7 +1070,61 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+/* ─── Bulk Selection ─── */
+
+function toggleSelectAll(el) {
+  document.querySelectorAll('#reviewList .bulk-checkbox:not(#selectAll)').forEach(cb => cb.checked = el.checked);
+  updateBulkBar();
+}
+
+function deselectAll() {
+  document.querySelectorAll('#reviewList .bulk-checkbox').forEach(cb => cb.checked = false);
+  document.getElementById('selectAll').checked = false;
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const checked = document.querySelectorAll('#reviewList .bulk-checkbox:checked:not(#selectAll)');
+  const bar = document.getElementById('bulkBar');
+  if (checked.length > 0) {
+    bar.style.display = 'block';
+    document.getElementById('bulkCount').textContent = `${checked.length} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function bulkAction(reviewRequired, reason) {
+  const checked = document.querySelectorAll('#reviewList .bulk-checkbox:checked:not(#selectAll)');
+  const ids = [...checked].map(cb => parseInt(cb.value));
+  if (ids.length === 0) return;
+
+  if (!confirm(`${reviewRequired ? 'Re-flag' : 'Mark as reviewed'} ${ids.length} items?`)) return;
+
+  try {
+    const res = await fetch('/api/reviews/bulk-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        analysis_ids: ids,
+        review_required: reviewRequired,
+        review_reason: reason || null,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const result = await res.json();
+    showToast(`${result.updated} items updated`, 'success');
+    deselectAll();
+    loadAll();
+  } catch (e) {
+    showToast(`Bulk action failed: ${e.message}`, 'error');
+  }
+}
+
 function loadAll() {
+  if (activeTab === 'detections') {
+    loadDetections();
+  }
   loadReviews();
   loadStats();
 }

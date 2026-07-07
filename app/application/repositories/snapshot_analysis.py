@@ -6,7 +6,7 @@ results stored in the ``snapshot_analyses`` table.
 
 from datetime import datetime
 
-from sqlalchemy import select, func, update, delete
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import SnapshotAnalysis
@@ -59,24 +59,6 @@ class SnapshotAnalysisRepository:
             stmt = stmt.where(SnapshotAnalysis.model_name == model_name)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
-
-    async def get_by_snapshot_and_model(self, snapshot_id: int, model_name: str) -> SnapshotAnalysis | None:
-        """Fetch the single analysis for a snapshot+model combination.
-
-        Args:
-            snapshot_id: The snapshot to query.
-            model_name: The model name to match.
-
-        Returns:
-            The matching SnapshotAnalysis or None.
-        """
-        result = await self._session.execute(
-            select(SnapshotAnalysis).where(
-                SnapshotAnalysis.snapshot_id == snapshot_id,
-                SnapshotAnalysis.model_name == model_name,
-            )
-        )
-        return result.scalar_one_or_none()
 
     async def get_pending_reviews(self, limit: int = 50) -> list[SnapshotAnalysis]:
         """Fetch analyses that are flagged for human review.
@@ -217,12 +199,3 @@ class SnapshotAnalysisRepository:
         result = await self._session.execute(stmt)
         return list(result.all())
 
-    async def delete_by_snapshot(self, snapshot_id: int) -> None:
-        """Remove all analyses associated with a given snapshot.
-
-        Args:
-            snapshot_id: The snapshot whose analyses should be deleted.
-        """
-        await self._session.execute(
-            delete(SnapshotAnalysis).where(SnapshotAnalysis.snapshot_id == snapshot_id)
-        )

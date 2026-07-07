@@ -6,7 +6,7 @@ cleanup over an async SQLAlchemy session.
 
 from datetime import date, datetime
 
-from sqlalchemy import select, func, delete, update
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import Snapshot
@@ -159,29 +159,6 @@ class SnapshotRepository:
             .order_by(Snapshot.camera_id, Snapshot.captured_at)
         )
         return list(result.scalars().all())
-
-    async def count_by_camera_and_date(
-        self, camera_id: int, target_date: date
-    ) -> int:
-        """Count snapshots for a camera on a given date.
-
-        Args:
-            camera_id: The identifier of the camera.
-            target_date: The calendar date to query (full day range).
-
-        Returns:
-            The number of matching snapshots, or 0 when none exist.
-        """
-        start = datetime.combine(target_date, datetime.min.time())
-        end = datetime.combine(target_date, datetime.max.time())
-        result = await self._session.execute(
-            select(func.count(Snapshot.id)).where(
-                Snapshot.camera_id == camera_id,
-                Snapshot.captured_at >= start,
-                Snapshot.captured_at <= end,
-            )
-        )
-        return result.scalar() or 0
 
     async def delete_older_than(self, cutoff: datetime) -> int:
         """Delete snapshots captured before a cutoff timestamp.

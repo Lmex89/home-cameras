@@ -5,6 +5,7 @@ and retrieve analysis details for flagged snapshots.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from loguru import logger
 
 from app.api.deps import get_analysis_service
@@ -84,6 +85,46 @@ async def list_detections(
         date_from=date_from,
     )
     return items
+
+
+class BulkReviewPayload(BaseModel):
+    """Payload for bulk review updates."""
+    analysis_ids: list[int]
+    review_required: bool = False
+    review_reason: str | None = None
+
+
+@router.post("/bulk-review")
+async def bulk_update_review(
+    payload: BulkReviewPayload,
+    service: AnalysisService = Depends(get_analysis_service),
+):
+    """Update review status for multiple analyses at once.
+
+    \f
+    Args:
+        payload: List of analysis IDs and the desired review state.
+
+    Returns:
+        Dict with ``updated`` count and ``errors`` list.
+    """
+    updated = 0
+    errors = []
+    for aid in payload.analysis_ids:
+        try:
+            analysis = await service.update_review(
+                aid,
+                review_required=payload.review_required,
+                review_reason=payload.review_reason,
+            )
+            if analysis:
+                updated += 1
+            else:
+                errors.append({"id": aid, "error": "Not found"})
+        except Exception as e:
+            errors.append({"id": aid, "error": str(e)})
+    logger.info(f"Bulk review: {updated} updated, {len(errors)} errors")
+    return {"updated": updated, "errors": errors}
 
 
 @router.post("/{analysis_id}/review")

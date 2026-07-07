@@ -6,7 +6,7 @@ schemas used across the API layer including ML analysis.
 """
 
 from datetime import date, datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -87,14 +87,6 @@ class SnapshotForceResult(BaseModel):
     success: bool
     image_path: str | None = None
     error: str | None = None
-
-
-class DetectedObject(BaseModel):
-    """A single object detected by the ML model."""
-
-    class_name: str
-    confidence: float = Field(ge=0.0, le=1.0)
-    bbox: list[float] = Field(min_length=4, max_length=4)
 
 
 class SnapshotAnalysisRead(BaseModel):

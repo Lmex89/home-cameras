@@ -9,7 +9,6 @@ from collections.abc import AsyncGenerator
 
 from fastapi import Depends
 from loguru import logger
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.database import session_factory
 from app.core.unit_of_work import UnitOfWork

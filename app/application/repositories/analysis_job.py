@@ -6,7 +6,7 @@ job table used by the ML pipeline scheduler.
 
 from datetime import datetime
 
-from sqlalchemy import select, func, update, delete
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import AnalysisJob
@@ -61,22 +61,6 @@ class AnalysisJobRepository:
         )
         return list(result.scalars().all())
 
-    async def get_by_snapshot(self, snapshot_id: int, job_type: str | None = None) -> list[AnalysisJob]:
-        """Find all jobs linked to a given snapshot, optionally filtered by type.
-
-        Args:
-            snapshot_id: The snapshot to query jobs for.
-            job_type: Optional pipeline stage filter (e.g. ``yolo_detection``).
-
-        Returns:
-            List of matching AnalysisJob records (may be empty).
-        """
-        stmt = select(AnalysisJob).where(AnalysisJob.snapshot_id == snapshot_id)
-        if job_type:
-            stmt = stmt.where(AnalysisJob.job_type == job_type)
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
-
     async def mark_started(self, job_id: int) -> None:
         """Transition a job from pending to processing and increment attempts.
 
@@ -114,23 +98,3 @@ class AnalysisJobRepository:
             .values(status="failed", error_message=error_message, finished_at=datetime.now())
         )
 
-    async def count_pending(self) -> int:
-        """Return the number of jobs currently in pending status.
-
-        Returns:
-            Total count of pending analysis jobs.
-        """
-        result = await self._session.execute(
-            select(func.count(AnalysisJob.id)).where(AnalysisJob.status == "pending")
-        )
-        return result.scalar() or 0
-
-    async def delete_by_snapshot(self, snapshot_id: int) -> None:
-        """Remove all jobs associated with a given snapshot.
-
-        Args:
-            snapshot_id: The snapshot whose jobs should be deleted.
-        """
-        await self._session.execute(
-            delete(AnalysisJob).where(AnalysisJob.snapshot_id == snapshot_id)
-        )
