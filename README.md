@@ -36,8 +36,11 @@ Set via environment variables or `.env` file:
 | `DEBUG` | `true` | Enable debug logging |
 | `HOST` | `0.0.0.0` | Bind address |
 | `PORT` | `8000` | HTTP port |
-| `SNAPSHOT_RETENTION_DAYS` | `30` | Auto-delete snapshots older than this |
+| `SNAPSHOT_RETENTION_DAYS` | `30` | Auto-delete snapshot records/archives older than this |
+| `SNAPSHOT_ZIP_AFTER_DAYS` | `7` | Zip raw snapshots older than this into daily archives |
+| `VIDEO_RETENTION_DAYS` | `30` | Auto-delete video archives older than this |
 | `DEFAULT_INTERVAL_SECONDS` | `60` | Default capture interval for new cameras |
+| `TIMEZONE` | `America/Mexico_City` | Timezone for cron triggers and timestamps |
 | `ANALYSIS_ENABLED` | `true` | Enable ML analysis pipeline |
 | `ANALYSIS_INTERVAL_SECONDS` | `30` | How often to poll for pending analysis jobs |
 | `YOLO_MODEL_PATH` | `yolov8n.pt` | Path to YOLO weights file |
@@ -90,10 +93,13 @@ This means cameras that don't support `GetSnapshotUri` (e.g. cheap NVRs, older m
 | `GET` | `/api/snapshots/{camera_id}/by-date` | Snapshots by camera + date |
 | `GET` | `/api/snapshots/image/{id}` | Snapshot JPEG file |
 | `GET` | `/api/report/{date}` | Daily report data (includes analysis) |
+| `POST` | `/api/videos/generate` | Generate a timelapse video for a camera/date |
+| `GET` | `/api/videos/{filename}` | Download a generated or archived video |
 | `GET` | `/api/reviews/pending` | List snapshots flagged for review |
 | `GET` | `/api/reviews/count` | Count of pending reviews |
 | `GET` | `/api/reviews/detections` | Paginated detections browser (supports `days_back`, `date_from`, `camera_id`, `class_name`, `limit`, `offset`) |
 | `POST` | `/api/reviews/{id}/review` | Confirm or reject a review flag |
+| `POST` | `/api/retention/run` | Trigger the retention/archive cleanup job on demand |
 
 ## Architecture
 
@@ -151,5 +157,15 @@ After each successful snapshot capture, an `analysis_job` is enqueued. A schedul
 ## Storage
 
 - `data/cameras.db` — SQLite database
-- `data/snapshots/{camera_id}/YYYY/MM/DD/HHMM.jpg` — captured images
+- `data/snapshots/{camera_id}/YYYY/MM/DD/HHMM.jpg` — captured images (raw)
+- `data/videos/*.mp4` — generated timelapse videos (raw)
+- `data/archives/snapshots/{camera_id}/{date}.zip` — zipped snapshots after `SNAPSHOT_ZIP_AFTER_DAYS`
+- `data/archives/videos/{camera_id}/{date}.zip` — zipped videos after the same threshold
+- `data/models/` — YOLO weights
+- `data/logs/` — daily rotating log files (zipped after 7 days)
 - `data/` is gitignored and mounted as a Docker volume
+
+### Retention lifecycle (daily at 03:00, or via `POST /api/retention/run`)
+
+1. **Zip** — raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` (default 7) are compressed into per-camera/per-day ZIP archives under `data/archives/`; the raw file is deleted and the DB row gains an `archive_path` reference (`{zip}::{filename}`). Snapshots whose raw file is missing are marked with a `<missing>` sentinel so they aren't reprocessed.
+2. **Delete** — records and orphaned archives older than `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS` (default 30) are removed. A ZIP is only deleted once all snapshots referencing it are also expired.

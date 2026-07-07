@@ -54,13 +54,14 @@ DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWo
 | Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
 | Analysis  | After each successful capture, `AnalysisService.analyze_snapshot()` enqueues an `analysis_job`. A separate scheduler poll (every 30s) processes pending jobs via `process_next_batch()`. |
 | Review    | `AnalysisService._apply_review_rules()` flags snapshots for human review (person after hours, high count, unexpected objects). Review items surface in the manifest and `/api/reviews/pending` endpoint. |
-| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db`, `snapshots/`, `models/`, and `logs/`. |
+| Retention | Daily 03:00 cron (`schedule_retention`) → `RetentionService.run()`: zips raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` into `data/archives/`, then deletes records/archives past `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS`. Also triggerable on demand via `POST /api/retention/run`. |
+| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db`, `snapshots/` (raw), `videos/` (raw), `archives/` (zipped), `models/`, and `logs/`. |
 
 ## Config
 
 Env vars (via `pydantic-settings`, reads `.env`):
 
-- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `SNAPSHOT_RETENTION_DAYS`, `DEFAULT_INTERVAL_SECONDS`
+- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `TIMEZONE`, `SNAPSHOT_RETENTION_DAYS`, `SNAPSHOT_ZIP_AFTER_DAYS`, `VIDEO_RETENTION_DAYS`, `DEFAULT_INTERVAL_SECONDS`
 - `ANALYSIS_ENABLED`, `ANALYSIS_INTERVAL_SECONDS`, `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`
 - `REVIEW_PERSON_AFTER_HOUR`, `REVIEW_PERSON_BEFORE_HOUR`, `REVIEW_MAX_PERSON_COUNT`
 
