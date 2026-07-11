@@ -68,7 +68,20 @@ switch "$command"
         echo "Stopped $service_name"
 
     case "restart"
-        systemctl restart $service_name
+        echo "Restarting Camera Monitor service..."
+        systemctl stop $service_name
+
+        # Wait for port 8002 to be released (up to 10 seconds)
+        for i in (seq 1 10)
+            if not ss -tlnp 2>/dev/null | grep -q ":8002 "
+                echo "  Port 8002 is free"
+                break
+            end
+            echo "  Waiting for port 8002... ($i/10)"
+            sleep 1
+        end
+
+        systemctl start $service_name
         echo "Restarted $service_name"
 
     case "status"
