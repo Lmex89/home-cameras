@@ -82,7 +82,7 @@ class RetentionService:
             groups.setdefault(key, []).append(snap)
 
         archived = 0
-        batch_size = 200
+        batch_size = 50
         archives_base = settings.archives_dir / "snapshots"
         for (cam_id, date_str), group in groups.items():
             zip_rel = f"snapshots/{cam_id}/{date_str}.zip"
