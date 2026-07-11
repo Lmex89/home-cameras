@@ -27,6 +27,9 @@ sudo fish manage-service.fish logs
 # Development restart (no sudo, reloads code changes)
 fish startup.fish --restart
 
+# Run retention cleanup manually (zip old files, delete expired)
+fish run-retention.fish
+
 # Uninstall
 sudo fish manage-service.fish uninstall
 ```

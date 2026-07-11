@@ -255,6 +255,7 @@ sudo fish setup-service.fish
 | `setup-service.fish` | Legacy installer — copies unit file, enables, starts | — | — |
 | `restart.fish` | Manual restart — kills existing process, starts fresh in background | 8002 | No (background via nohup) |
 | `startup.fish` | Systemd entrypoint with `--restart` for dev — prepares env, downloads model, execs uvicorn | 8002 | Yes (via `Restart=always`) |
+| `run-retention.fish` | Run retention cleanup manually — zips old files, deletes expired | — | — |
 
 #### `restart.fish`
 
@@ -301,3 +302,13 @@ Systemd unit file for production deployment. Features:
 - **Environment** — loads `.env` file, sets `PATH` to include virtualenv
 - **Logging** — stdout/stderr routed to systemd journal
 - **Network dependency** — waits for `network-online.target` before starting
+
+#### `run-retention.fish`
+
+Run the retention/archive cleanup job manually via the HTTP API:
+
+```bash
+fish run-retention.fish
+```
+
+Equivalent to the daily 03:00 AM cron and `POST /api/retention/run`. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`. Has a 5-minute timeout.
