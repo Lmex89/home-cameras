@@ -311,4 +311,4 @@ Run the retention/archive cleanup job manually via the HTTP API:
 fish run-retention.fish
 ```
 
-Equivalent to the daily 03:00 AM cron and `POST /api/retention/run`. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`. Has a 5-minute timeout.
+Equivalent to the daily 03:00 AM cron and `POST /api/retention/run`. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`. Has a 30-minute timeout and displays the result counts (zipped, deleted).
