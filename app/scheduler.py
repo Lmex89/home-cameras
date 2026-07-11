@@ -6,6 +6,7 @@ as a daily retention cleanup job.
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -170,12 +171,12 @@ def schedule_analysis() -> None:
 
 
 def schedule_retention() -> None:
-    """Schedule the daily retention cleanup job at 03:00."""
+    """Schedule the daily retention cleanup job at 06:00 local time."""
     scheduler.add_job(
         retention_job,
-        trigger=CronTrigger(hour=3, minute=0),
+        trigger=CronTrigger(hour=6, minute=0, timezone=ZoneInfo(settings.timezone)),
         id="retention_cleanup",
         replace_existing=True,
         name="Daily retention cleanup",
     )
-    logger.info("Scheduled daily retention cleanup at 03:00")
+    logger.info("Scheduled daily retention cleanup at 06:00 (local time)")

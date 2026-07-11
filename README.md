@@ -165,7 +165,7 @@ After each successful snapshot capture, an `analysis_job` is enqueued. A schedul
 - `data/logs/` — daily rotating log files (zipped after 7 days)
 - `data/` is gitignored and mounted as a Docker volume
 
-### Retention lifecycle (daily at 03:00, or via `POST /api/retention/run`)
+### Retention lifecycle (daily at 06:00, or via `POST /api/retention/run`)
 
 1. **Zip** — raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` (default 7) are compressed into per-camera/per-day ZIP archives under `data/archives/`; the raw file is deleted and the DB row gains an `archive_path` reference (`{zip}::{filename}`). Snapshots whose raw file is missing are marked with a `<missing>` sentinel so they aren't reprocessed.
 2. **Delete** — records and orphaned archives older than `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS` (default 30) are removed. A ZIP is only deleted once all snapshots referencing it are also expired.
@@ -311,4 +311,4 @@ Run the retention/archive cleanup job manually via the HTTP API:
 fish run-retention.fish
 ```
 
-Equivalent to the daily 03:00 AM cron and `POST /api/retention/run`. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`. Has a 30-minute timeout and displays the result counts (zipped, deleted).
+Equivalent to the daily 06:00 AM cron and `POST /api/retention/run`. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`. Has a 30-minute timeout and displays the result counts (zipped, deleted).
