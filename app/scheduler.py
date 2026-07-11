@@ -116,12 +116,29 @@ async def load_schedule() -> None:
 
 
 async def retention_job() -> None:
-    """Run daily retention cleanup (zip old files, delete expired)."""
-    async with UnitOfWork(session_factory) as uow:
-        from app.application.services.retention_service import RetentionService
-        service = RetentionService(uow)
-        result = await service.run()
-        logger.info(f"Retention job complete: {result}")
+    """Run daily retention cleanup (zip old files, delete expired).
+
+    Pauses capture and analysis jobs during retention to avoid SQLite
+    write contention — only one writer is allowed at a time.
+    """
+    logger.info("Retention job: pausing capture/analysis schedulers")
+    capture_ids = [j.id for j in scheduler.get_jobs() if j.id.startswith("capture_")]
+    analysis_id = "analysis_processing"
+    for jid in capture_ids:
+        scheduler.pause_job(jid)
+    scheduler.pause_job(analysis_id)
+
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            from app.application.services.retention_service import RetentionService
+            service = RetentionService(uow)
+            result = await service.run()
+            logger.info(f"Retention job complete: {result}")
+    finally:
+        logger.info("Retention job: resuming capture/analysis schedulers")
+        for jid in capture_ids:
+            scheduler.resume_job(jid)
+        scheduler.resume_job(analysis_id)
 
 
 async def analysis_job() -> None:

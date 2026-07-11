@@ -236,8 +236,20 @@ async def trigger_retention():
     from app.core.database import session_factory as _sf
     from app.application.services.retention_service import RetentionService
 
-    async with UnitOfWork(_sf) as uow:
-        svc = RetentionService(uow)
-        result = await svc.run()
-        logger.info(f"Manual retention run: {result}")
-        return RetentionResultRead.model_validate(result)
+    logger.info("Manual retention: pausing capture/analysis schedulers")
+    capture_ids = [j.id for j in scheduler.get_jobs() if j.id.startswith("capture_")]
+    for jid in capture_ids:
+        scheduler.pause_job(jid)
+    scheduler.pause_job("analysis_processing")
+
+    try:
+        async with UnitOfWork(_sf) as uow:
+            svc = RetentionService(uow)
+            result = await svc.run()
+            logger.info(f"Manual retention run: {result}")
+            return RetentionResultRead.model_validate(result)
+    finally:
+        logger.info("Manual retention: resuming capture/analysis schedulers")
+        for jid in capture_ids:
+            scheduler.resume_job(jid)
+        scheduler.resume_job("analysis_processing")
