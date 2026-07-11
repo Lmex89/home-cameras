@@ -164,7 +164,12 @@ class SnapshotService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return None, None, "ffmpeg timed out after 30s"
             if proc.returncode != 0 or not stdout:
                 error_msg = (stderr.decode(errors='replace')[:200] if stderr else "ffmpeg returned no data")
                 return None, None, f"ffmpeg failed: {error_msg}"
