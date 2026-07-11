@@ -82,6 +82,7 @@ class RetentionService:
             groups.setdefault(key, []).append(snap)
 
         archived = 0
+        batch_size = 200
         archives_base = settings.archives_dir / "snapshots"
         for (cam_id, date_str), group in groups.items():
             zip_rel = f"snapshots/{cam_id}/{date_str}.zip"
@@ -89,6 +90,7 @@ class RetentionService:
             zip_abs.parent.mkdir(parents=True, exist_ok=True)
 
             with zipfile.ZipFile(zip_abs, "a", zipfile.ZIP_DEFLATED) as zf:
+                batch_count = 0
                 for snap in group:
                     src = settings.snapshots_dir / snap.image_path
                     if not src.exists():
@@ -99,6 +101,7 @@ class RetentionService:
                         await self._uow.snapshots.update_archive_path(
                             snap.id, f"{zip_rel}::<missing>"
                         )
+                        batch_count += 1
                         continue
                     arcname = src.name
                     if arcname not in zf.namelist():
@@ -107,6 +110,13 @@ class RetentionService:
                     await self._uow.snapshots.update_archive_path(snap.id, archive_ref)
                     src.unlink(missing_ok=True)
                     archived += 1
+                    batch_count += 1
+
+                    if batch_count >= batch_size:
+                        await self._uow.commit()
+                        batch_count = 0
+                if batch_count > 0:
+                    await self._uow.commit()
 
         logger.info(f"Archived {archived} snapshots into {len(groups)} ZIP files")
         return archived
