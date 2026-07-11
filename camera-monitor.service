@@ -1,0 +1,45 @@
+# Camera Monitor - ONVIF Snapshot Service
+#
+# Systemd unit file for running the Camera Monitor app as a persistent
+# background service with automatic startup and crash recovery.
+#
+# Installation:
+#     sudo cp camera-monitor.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now camera-monitor.service
+#
+# Management:
+#     systemctl status camera-monitor.service   # Check status
+#     journalctl -u camera-monitor.service -f   # View logs
+#     sudo systemctl restart camera-monitor.service
+#
+# Configuration:
+#     - Loads environment variables from .env file
+#     - Runs as user lmex89 with the project's virtualenv
+#     - Listens on port 8002 (configured in startup.fish)
+#     - Restarts automatically on failure with 5-second delay
+#
+# Dependencies:
+#     - network-online.target (waits for network to be available)
+#     - startup.fish (entrypoint script that prepares env and execs uvicorn)
+
+[Unit]
+Description=Camera Monitor - ONVIF Snapshot Service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lmex89
+Group=lmex89
+WorkingDirectory=/home/lmex89/Documentos/probe/cameras
+Environment=PATH=/home/lmex89/Documentos/probe/cameras/.venv/bin:/usr/local/bin:/usr/bin
+EnvironmentFile=/home/lmex89/Documentos/probe/cameras/.env
+ExecStart=/usr/bin/fish /home/lmex89/Documentos/probe/cameras/startup.fish
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

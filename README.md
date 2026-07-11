@@ -169,3 +169,135 @@ After each successful snapshot capture, an `analysis_job` is enqueued. A schedul
 
 1. **Zip** — raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` (default 7) are compressed into per-camera/per-day ZIP archives under `data/archives/`; the raw file is deleted and the DB row gains an `archive_path` reference (`{zip}::{filename}`). Snapshots whose raw file is missing are marked with a `<missing>` sentinel so they aren't reprocessed.
 2. **Delete** — records and orphaned archives older than `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS` (default 30) are removed. A ZIP is only deleted once all snapshots referencing it are also expired.
+
+## Deployment
+
+### Option 1: Docker Compose (recommended)
+
+```bash
+docker compose up --build -d
+```
+
+The compose file includes `restart: unless-stopped`, so the container auto-starts on boot and restarts on failure.
+
+### Option 2: systemd service (bare metal)
+
+For production deployments without Docker, use the included systemd service. This runs the app on port **8002** with automatic startup and crash recovery.
+
+#### Prerequisites
+
+- Fish shell installed (`sudo apt install fish` or equivalent)
+- Python virtualenv at `.venv/` with dependencies installed
+- `.env` file configured (copy `.env.example` and adjust)
+
+#### Install
+
+```bash
+sudo fish manage-service.fish install
+```
+
+#### Manage
+
+```bash
+# Start the service
+sudo fish manage-service.fish start
+
+# Stop the service
+sudo fish manage-service.fish stop
+
+# Restart (after pulling new code)
+sudo fish manage-service.fish restart
+
+# Check status
+sudo fish manage-service.fish status
+
+# View live logs
+sudo fish manage-service.fish logs
+
+# Restart for development (reloads code changes, no sudo needed)
+fish startup.fish --restart
+
+# Uninstall (stop and remove the service)
+sudo fish manage-service.fish uninstall
+
+# Reinstall (fresh install)
+sudo fish manage-service.fish reinstall
+```
+
+### Scripts
+
+#### `manage-service.fish`
+
+All-in-one service manager. Must be run with `sudo` (except `logs` which can run without).
+
+```bash
+sudo fish manage-service.fish install     # Install and start
+sudo fish manage-service.fish start       # Start
+sudo fish manage-service.fish stop        # Stop
+sudo fish manage-service.fish restart     # Restart
+sudo fish manage-service.fish status      # Show status
+sudo fish manage-service.fish logs        # Follow live logs
+sudo fish manage-service.fish uninstall   # Remove service
+sudo fish manage-service.fish reinstall   # Fresh reinstall
+```
+
+#### `setup-service.fish`
+
+Legacy installer — delegates to `manage-service.fish install`. Kept for backward compatibility.
+
+```bash
+sudo fish setup-service.fish
+```
+
+| Script | Purpose | Port | Auto-restart |
+|---|---|---|---|
+| `manage-service.fish` | Full service manager — install, start, stop, restart, status, logs, uninstall | — | — |
+| `setup-service.fish` | Legacy installer — copies unit file, enables, starts | — | — |
+| `restart.fish` | Manual restart — kills existing process, starts fresh in background | 8002 | No (background via nohup) |
+| `startup.fish` | Systemd entrypoint with `--restart` for dev — prepares env, downloads model, execs uvicorn | 8002 | Yes (via `Restart=always`) |
+
+#### `restart.fish`
+
+Use for manual restarts during development or when you need to kill and re-launch the server from a terminal.
+
+```bash
+fish restart.fish
+```
+
+- Kills any running `uvicorn app.main:app` process
+- Waits up to 5 seconds for port 8002 to free
+- Downloads YOLO model if missing
+- Generates dashboard manifest
+- Starts uvicorn in the background via `nohup`
+- Logs written to `/tmp/uvicorn.log`
+
+#### `startup.fish`
+
+Primary entrypoint for both systemd and development. Uses `exec` to replace the shell process with uvicorn, allowing systemd to track the process lifecycle.
+
+```bash
+# Normal start (systemd uses this)
+fish startup.fish
+
+# Restart for development (kills existing process, waits for port to free)
+fish startup.fish --restart
+```
+
+Modes:
+- **No flags** — clean start, assumes no existing process (used by systemd)
+- **`--restart`** — kills existing uvicorn, waits up to 5 seconds for port 8002 to free, then starts
+
+Key differences from `restart.fish`:
+- Uses `exec` instead of `nohup` (foreground process)
+- Resolves paths via `realpath` instead of `$PWD` (works from any working directory)
+- No background logging to `/tmp/uvicorn.log` (output goes to terminal or journal)
+
+#### `camera-monitor.service`
+
+Systemd unit file for production deployment. Features:
+
+- **Auto-start on boot** — `WantedBy=multi-user.target`
+- **Crash recovery** — `Restart=always` with 5-second delay
+- **Environment** — loads `.env` file, sets `PATH` to include virtualenv
+- **Logging** — stdout/stderr routed to systemd journal
+- **Network dependency** — waits for `network-online.target` before starting

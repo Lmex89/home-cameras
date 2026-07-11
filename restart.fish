@@ -8,6 +8,23 @@
 #
 # Usage:
 #     fish restart.fish
+#
+# Behavior:
+#     1. Validates the virtualenv Python interpreter exists.
+#     2. Ensures the models/ directory exists.
+#     3. Downloads yolov8n.pt from GitHub Releases if not present.
+#     4. Kills any running "uvicorn app.main:app" process.
+#     5. Waits up to 5 seconds for port 8002 to become free.
+#     6. Sets ANALYSIS_ENABLED=true and YOLO_MODEL_PATH env vars.
+#     7. Starts uvicorn in the background via nohup, logging to /tmp/uvicorn.log.
+#     8. Runs tools/export_manifest.py to generate the dashboard manifest.
+#     9. Prints the PID and dashboard URLs.
+#
+# Notes:
+#     - This script is for manual/interactive use. For systemd auto-start,
+#       use startup.fish instead.
+#     - The background process survives terminal close but will NOT restart
+#       on crash. Use the systemd service for production.
 
 set venv_python "$PWD/.venv/bin/python"
 set model_dir "$PWD/models"

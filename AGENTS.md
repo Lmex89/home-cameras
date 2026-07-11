@@ -7,6 +7,30 @@ uvicorn app.main:app --reload --port 8004  # dev server
 docker compose up --build                  # containerized
 ```
 
+## Service management
+
+For production deployments on bare metal, use the systemd service scripts:
+
+```bash
+# Install and enable auto-start on boot
+sudo fish manage-service.fish install
+
+# Start / stop / restart
+sudo fish manage-service.fish start
+sudo fish manage-service.fish stop
+sudo fish manage-service.fish restart
+
+# Check status and logs
+sudo fish manage-service.fish status
+sudo fish manage-service.fish logs
+
+# Development restart (no sudo, reloads code changes)
+fish startup.fish --restart
+
+# Uninstall
+sudo fish manage-service.fish uninstall
+```
+
 ## Architecture
 
 ```
