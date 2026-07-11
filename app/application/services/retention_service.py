@@ -106,8 +106,16 @@ class RetentionService:
                     arcname = src.name
                     if arcname not in zf.namelist():
                         zf.write(src, arcname)
+                    # Verify file was actually written to the ZIP
+                    if arcname not in zf.namelist():
+                        logger.error(f"Failed to add {src} to {zip_abs}, skipping deletion")
+                        continue
                     archive_ref = f"{zip_rel}::{arcname}"
-                    await self._uow.snapshots.update_archive_path(snap.id, archive_ref)
+                    try:
+                        await self._uow.snapshots.update_archive_path(snap.id, archive_ref)
+                    except Exception:
+                        logger.exception(f"Failed to update archive_path for snapshot {snap.id}, skipping deletion")
+                        continue
                     src.unlink(missing_ok=True)
                     archived += 1
                     batch_count += 1
