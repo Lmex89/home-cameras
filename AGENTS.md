@@ -27,7 +27,9 @@ sudo fish manage-service.fish logs
 # Development restart (no sudo, reloads code changes)
 fish startup.fish --restart
 
-# Run retention cleanup manually (zip old files, delete expired)
+# Run retention cleanup manually (MANDATORY command)
+# Always use this script for manual retention; it pauses capture/analysis
+# jobs to avoid SQLite lock contention and reports the result correctly.
 fish run-retention.fish
 
 # Uninstall

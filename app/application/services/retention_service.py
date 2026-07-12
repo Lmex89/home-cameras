@@ -91,18 +91,12 @@ class RetentionService:
 
             with zipfile.ZipFile(zip_abs, "a", zipfile.ZIP_DEFLATED) as zf:
                 batch_count = 0
+                missing_ids: list[int] = []
                 for snap in group:
-                    src = settings.snapshots_dir / snap.image_path
-                    if not src.exists():
-                        logger.warning(
-                            f"Snapshot {snap.id} file missing on disk: {src}; "
-                            "marking as archived to skip future retention passes"
-                        )
-                        await self._uow.snapshots.update_archive_path(
-                            snap.id, f"{zip_rel}::<missing>"
-                        )
-                        batch_count += 1
+                    if not snap.image_path or not (settings.snapshots_dir / snap.image_path).exists():
+                        missing_ids.append(snap.id)
                         continue
+                    src = settings.snapshots_dir / snap.image_path
                     arcname = src.name
                     if arcname not in zf.namelist():
                         zf.write(src, arcname)
@@ -125,6 +119,15 @@ class RetentionService:
                         batch_count = 0
                 if batch_count > 0:
                     await self._uow.commit()
+                if missing_ids:
+                    marked = await self._uow.snapshots.mark_archived_batch(
+                        missing_ids, f"{zip_rel}::<missing>"
+                    )
+                    await self._uow.commit()
+                    logger.warning(
+                        f"Marked {marked} snapshot(s) as <missing> for "
+                        f"camera {cam_id} on {date_str} (raw file absent)"
+                    )
 
         logger.info(f"Archived {archived} snapshots into {len(groups)} ZIP files")
         return archived

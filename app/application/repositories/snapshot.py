@@ -6,7 +6,7 @@ cleanup over an async SQLAlchemy session.
 
 from datetime import date, datetime
 
-from sqlalchemy import select, delete, update
+from sqlalchemy import select, delete, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import Snapshot
@@ -204,6 +204,30 @@ class SnapshotRepository:
             .values(archive_path=archive_path)
         )
         await self._session.flush()
+
+    async def mark_archived_batch(self, snapshot_ids: list[int], archive_path: str) -> int:
+        """Set the same archive_path on many snapshots in one statement.
+
+        Used by the retention recovery pass to bulk-mark snapshots whose
+        raw file is already gone (e.g. after a rolled-back transaction)
+        without issuing one UPDATE per row.
+
+        Args:
+            snapshot_ids: Identifiers of snapshots to update.
+            archive_path: The archive path to store for all of them.
+
+        Returns:
+            The number of snapshot rows actually updated.
+        """
+        if not snapshot_ids:
+            return 0
+        result = await self._session.execute(
+            update(Snapshot)
+            .where(Snapshot.id.in_(snapshot_ids))
+            .values(archive_path=archive_path)
+        )
+        await self._session.flush()
+        return result.rowcount or 0
 
     async def count_by_archive_zip(self, zip_path: str) -> int:
         """Count snapshots referencing a given archive zip.

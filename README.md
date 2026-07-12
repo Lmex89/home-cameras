@@ -303,12 +303,12 @@ Systemd unit file for production deployment. Features:
 - **Logging** — stdout/stderr routed to systemd journal
 - **Network dependency** — waits for `network-online.target` before starting
 
-#### `run-retention.fish`
+#### `run-retention.fish` (mandatory for manual runs)
 
-Run the retention/archive cleanup job manually via the HTTP API:
+Run the retention/archive cleanup job manually. **Always use this script** instead of calling `POST /api/retention/run` directly — it pauses capture and analysis schedulers to avoid SQLite write contention, has a 30-minute timeout, and pretty-prints the result.
 
 ```bash
 fish run-retention.fish
 ```
 
-Equivalent to the daily 06:00 AM cron and `POST /api/retention/run`. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`. Has a 30-minute timeout and displays the result counts (zipped, deleted).
+Equivalent to the daily 06:00 AM cron. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`.

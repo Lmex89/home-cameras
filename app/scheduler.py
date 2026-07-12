@@ -135,6 +135,8 @@ async def retention_job() -> None:
             service = RetentionService(uow)
             result = await service.run()
             logger.info(f"Retention job complete: {result}")
+    except Exception:
+        logger.exception("Retention job failed")
     finally:
         logger.info("Retention job: resuming capture/analysis schedulers")
         for jid in capture_ids:

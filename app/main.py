@@ -248,6 +248,9 @@ async def trigger_retention():
             result = await svc.run()
             logger.info(f"Manual retention run: {result}")
             return RetentionResultRead.model_validate(result)
+    except Exception:
+        logger.exception("Manual retention run failed")
+        raise
     finally:
         logger.info("Manual retention: resuming capture/analysis schedulers")
         for jid in capture_ids:
