@@ -241,18 +241,9 @@ sudo fish manage-service.fish uninstall   # Remove service
 sudo fish manage-service.fish reinstall   # Fresh reinstall
 ```
 
-#### `setup-service.fish`
-
-Legacy installer — delegates to `manage-service.fish install`. Kept for backward compatibility.
-
-```bash
-sudo fish setup-service.fish
-```
-
 | Script | Purpose | Port | Auto-restart |
-|---|---|---|---|
+|---|---|---|---|---|
 | `manage-service.fish` | Full service manager — install, start, stop, restart, status, logs, uninstall | — | — |
-| `setup-service.fish` | Legacy installer — copies unit file, enables, starts | — | — |
 | `restart.fish` | Manual restart — kills existing process, starts fresh in background | 8002 | No (background via nohup) |
 | `startup.fish` | Systemd entrypoint with `--restart` for dev — prepares env, downloads model, execs uvicorn | 8002 | Yes (via `Restart=always`) |
 | `run-retention.fish` | Run retention cleanup manually — zips old files, deletes expired | — | — |
