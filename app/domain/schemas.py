@@ -148,7 +148,19 @@ class VideoRequest(BaseModel):
 class VideoResponse(BaseModel):
     """Serialize the result of a successful video generation."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     video_url: str
+
+
+class AnnotatedVideoRequest(BaseModel):
+    """Validate payload for annotated timelapse video generation."""
+
+    camera_id: int = Field(default=1, ge=1)
+    date: date
+    classes: Annotated[str | None, StringConstraints(strip_whitespace=True)] = Field(
+        default=None, description="Comma-separated classes, overrides config default"
+    )
 
 
 class AnalysisReviewUpdate(BaseModel):

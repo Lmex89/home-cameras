@@ -5,7 +5,8 @@ and reschedule per-camera capture jobs at fixed intervals, as well
 as a daily retention cleanup job.
 """
 
-from datetime import datetime
+import shutil
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -17,6 +18,7 @@ from app.core.config import settings
 from app.core.database import session_factory
 from app.core.unit_of_work import UnitOfWork
 from app.infrastructure.onvif import ONVIFCameraClient
+from app.infrastructure.telegram import TelegramNotifier
 from app.application.services.snapshot_service import SnapshotService
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -182,3 +184,57 @@ def schedule_retention() -> None:
         name="Daily retention cleanup",
     )
     logger.info("Scheduled daily retention cleanup at 06:00 (local time)")
+
+
+async def timelapse_job() -> None:
+    """Generate the daily annotated timelapse for the previous day."""
+    yesterday = date.today() - timedelta(days=1)
+    camera_id = settings.timelapse_camera_id
+    logger.info(f"Timelapse job: generating annotated timelapse for camera {camera_id} on {yesterday}")
+    camera_name = str(camera_id)
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            camera = await uow.cameras.get_by_id(camera_id)
+            if camera:
+                camera_name = camera.name
+            from app.application.services.timelapse_service import TimelapseService
+            svc = TimelapseService(uow)
+            output_path, temp_dir = await svc.generate_annotated_timelapse(camera_id, yesterday)
+        vdir = settings.videos_dir
+        vdir.mkdir(parents=True, exist_ok=True)
+        persistent = vdir / f"timelapse_annotated_{camera_id}_{yesterday.isoformat()}.mp4"
+        shutil.move(str(output_path), str(persistent))
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.info(f"Annotated timelapse saved: {persistent}")
+
+        from app.infrastructure.storage import StorageProvider
+        storage = StorageProvider.from_settings()
+        blaze_url = await storage.upload(persistent) if storage else None
+
+        size_mb = persistent.stat().st_size / (1024 * 1024)
+        caption = f"\U0001f3a5 Camera {camera_name} — timelapse {yesterday.isoformat()} (annotated, {size_mb:.1f} MB)"
+        notifier = TelegramNotifier.from_settings()
+        await notifier.send_video(
+            persistent,
+            caption=caption,
+            fallback_url=f"http://localhost:{settings.port}/api/videos/download/{persistent.name}",
+            public_url=blaze_url,
+        )
+    except Exception:
+        logger.exception(f"Timelapse job failed for camera {camera_id} on {yesterday}")
+
+
+def schedule_timelapse() -> None:
+    """Schedule the daily annotated timelapse generation job."""
+    scheduler.add_job(
+        timelapse_job,
+        trigger=CronTrigger(
+            hour=settings.timelapse_hour,
+            minute=settings.timelapse_minute,
+            timezone=ZoneInfo(settings.timezone),
+        ),
+        id="timelapse_generation",
+        replace_existing=True,
+        name="Daily annotated timelapse generation",
+    )
+    logger.info(f"Scheduled daily annotated timelapse at {settings.timelapse_hour:02d}:{settings.timelapse_minute:02d} (local time)")
