@@ -205,6 +205,12 @@ class TimelapseService:
             failed = 0
 
             async def _track(future: asyncio.Future, index: int) -> None:
+                """Await one worker future and record its result with progress.
+
+                Args:
+                    future: asyncio.Future returned by the process pool.
+                    index: Position in the ordered results list.
+                """
                 nonlocal completed, failed
                 try:
                     result = await future

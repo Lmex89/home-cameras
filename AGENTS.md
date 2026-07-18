@@ -32,6 +32,10 @@ fish startup.fish --restart
 # jobs to avoid SQLite lock contention and reports the result correctly.
 fish run-retention.fish
 
+# Purge snapshots/analyses/videos older than N days (DESTRUCTIVE)
+# Default keeps last 3 days. Use with caution — no archives are created.
+fish run-purge.fish
+
 # Uninstall
 sudo fish manage-service.fish uninstall
 ```
@@ -57,6 +61,7 @@ app/
 ├── infrastructure/
 │   ├── onvif.py          # ONVIFCameraClient
 │   ├── archive.py        # ZIP snapshot retriever
+│   ├── storage.py        # StorageProvider (Backblaze B2 / S3)
 │   ├── telegram.py       # TelegramNotifier (video reports)
 │   └── ml/
 │       ├── __init__.py
@@ -85,6 +90,8 @@ DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWo
 | Analysis  | After each successful capture, `AnalysisService.analyze_snapshot()` enqueues an `analysis_job`. A separate scheduler poll (every 30s) processes pending jobs via `process_next_batch()`. |
 | Review    | `AnalysisService._apply_review_rules()` flags snapshots for human review (person after hours, high count, unexpected objects). Review items surface in the manifest and `/api/reviews/pending` endpoint. |
 | Retention | Daily 06:00 cron (`schedule_retention`) → `RetentionService.run()`: zips raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` into `data/archives/`, then deletes records/archives past `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS`. Also triggerable on demand via `POST /api/retention/run`. |
+| Purge     | Manual destructive cleanup via `POST /api/retention/purge` or `fish run-purge.fish`. Deletes raw snapshots, analyses, jobs, videos, and archives older than `days` **without** creating archives. |
+| Timelapse | Daily 06:30 cron (`schedule_timelapse`) generates an annotated MP4 for the configured camera using YOLO detections; manual runs via `fish run-timelapse.fish`. Videos are uploaded to Backblaze B2 and notified via Telegram. |
 | Telegram  | After each timelapse video is saved (scheduled job or manual ``POST /api/videos/annotated``), ``TelegramNotifier.send_video()`` sends the MP4 directly to the configured Telegram chat. Fallback to text+URL if the video exceeds 50 MB. |
 | Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db`, `snapshots/` (raw), `videos/` (raw), `archives/` (zipped), `models/`, and `logs/`. |
 
@@ -96,6 +103,8 @@ Env vars (via `pydantic-settings`, reads `.env`):
 - `ANALYSIS_ENABLED`, `ANALYSIS_INTERVAL_SECONDS`, `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`
 - `REVIEW_PERSON_AFTER_HOUR`, `REVIEW_PERSON_BEFORE_HOUR`, `REVIEW_MAX_PERSON_COUNT`
 - `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- `TIMELAPSE_HOUR`, `TIMELAPSE_MINUTE`, `TIMELAPSE_CAMERA_ID`, `TIMELAPSE_OBJECT_CLASSES`, `TIMELAPSE_FRAME_DURATION`, `TIMELAPSE_WORKERS`
+- `STORAGE_ENABLED`, `STORAGE_ENDPOINT_URL`, `STORAGE_BUCKET_NAME`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_PUBLIC_URL`, `STORAGE_REGION`
 
 ## Docker
 
