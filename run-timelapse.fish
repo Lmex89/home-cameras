@@ -60,7 +60,7 @@ end
 # Parse arguments
 set camera_id $argv[1]
 if test -z "$camera_id"
-    set camera_id 6
+    set camera_id 5
     _log INFO "No camera_id provided, using default: $camera_id"
 end
 

@@ -52,10 +52,10 @@ class Settings(BaseSettings):
     analysis_interval_seconds: int = 30
     """How often (in seconds) the scheduler polls for new analysis jobs."""
 
-    timelapse_hour: int = 6
+    timelapse_hour: int = 21
     """Hour (0–23) when the daily annotated timelapse is generated."""
 
-    timelapse_minute: int = 30
+    timelapse_minute: int = 0
     """Minute (0–59) when the daily annotated timelapse is generated."""
 
     timelapse_camera_id: int = 6
