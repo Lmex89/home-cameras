@@ -8,6 +8,7 @@ import asyncio
 import json
 import shutil
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
 
@@ -25,6 +26,67 @@ CLASS_COLORS: dict[str, tuple[int, int, int]] = {
 }
 
 _DEFAULT_COLOR = (255, 50, 50)
+
+
+def _draw_frame_worker(
+    image_path: str,
+    output_path: str,
+    detections: list[dict],
+    target_classes: set[str],
+) -> str | None:
+    """Draw bounding boxes on a single frame and save it.
+
+    Designed to be pickled and executed in a separate process. It receives
+    only serializable arguments (strings, lists, sets) to avoid passing PIL
+    Image objects across process boundaries.
+
+    Args:
+        image_path: Absolute path to the source JPEG snapshot.
+        output_path: Absolute path where the annotated JPEG will be saved.
+        detections: List of detection dicts with ``class_name``,
+            ``bbox`` (``[x1, y1, x2, y2]``), and ``confidence``.
+        target_classes: Set of class names to draw (e.g. ``{"person"}``).
+
+    Returns:
+        The output path on success, or ``None`` if the frame could not be
+        processed.
+    """
+    try:
+        img = Image.open(Path(image_path)).convert("RGB")
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                size=max(14, img.width // 80),
+            )
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+        width, height = img.size
+
+        for det in detections:
+            cls_name = det.get("class_name", "")
+            if cls_name not in target_classes:
+                continue
+            confidence = det.get("confidence", 0)
+            bbox = det.get("bbox")
+            if not bbox or len(bbox) != 4:
+                continue
+            x1, y1, x2, y2 = bbox
+            color = CLASS_COLORS.get(cls_name, _DEFAULT_COLOR)
+            thickness = max(2, min(width, height) // 300)
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=thickness)
+            label = f"{cls_name} {confidence:.0%}"
+            bbox_text = draw.textbbox((0, 0), label, font=font)
+            tw = bbox_text[2] - bbox_text[0]
+            th = bbox_text[3] - bbox_text[1]
+            draw.rectangle([x1, y1 - th - 4, x1 + tw + 4, y1], fill=color)
+            draw.text((x1 + 2, y1 - th - 2), label, fill="white", font=font)
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        img.save(output_path, "JPEG", quality=92)
+        return output_path
+    except (OSError, IOError):
+        return None
 
 
 class TimelapseService:
@@ -47,7 +109,8 @@ class TimelapseService:
 
         Fetches all snapshots for the camera on *target_date*, retrieves
         their YOLO analysis results, draws bounding boxes for the configured
-        object classes, and stitches them into a video with ffmpeg.
+        object classes in parallel worker processes, and stitches them into a
+        video with ffmpeg.
 
         Snapshots without analysis results are still included (no boxes
         drawn) so the video gives full-day context.
@@ -101,20 +164,72 @@ class TimelapseService:
         temp_dir = Path(tempfile.mkdtemp(prefix=f"atl_{camera_id}_"))
         frame_paths: list[Path] = []
 
-        logger.info(f"Step 4/6: Drawing detection boxes on {total_snaps} frames...")
+        workers = settings.timelapse_workers
+        logger.info(f"Step 4/6: Drawing detection boxes on {total_snaps} frames using {workers} workers...")
+        skipped = 0
+        work_items: list[tuple[int, Path, Path, list[dict]]] = []
         for idx, snap in enumerate(snapshots):
             full_path = settings.snapshots_dir / snap.image_path
-            if not full_path.exists():
-                logger.debug(f"Skipping missing snapshot image: {full_path}")
+            if not full_path.is_file():
+                skipped += 1
+                if skipped <= 3:
+                    logger.warning(f"Skipping non-file snapshot: {full_path}")
                 continue
+            output_path = temp_dir / f"{snap.id:08d}.jpg"
             detections = analyses_by_snap.get(snap.id, [])
-            annotated = self._draw_detections(full_path, detections, target_classes)
-            annotated_path = temp_dir / f"{snap.id:08d}.jpg"
-            annotated.save(annotated_path, "JPEG", quality=92)
-            frame_paths.append(annotated_path)
-            if (idx + 1) % 200 == 0 or idx == total_snaps - 1:
-                pct = (idx + 1) / total_snaps * 100
-                logger.info(f"  Annotated {idx + 1}/{total_snaps} frames ({pct:.0f}%)")
+            work_items.append((idx, full_path, output_path, detections))
+
+        if skipped:
+            logger.info(f"  Skipped {skipped} non-file entries")
+
+        if not work_items:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise ValueError(f"No valid image files found for camera {camera_id} on {target_date}")
+
+        loop = asyncio.get_running_loop()
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                loop.run_in_executor(
+                    executor,
+                    _draw_frame_worker,
+                    str(full_path),
+                    str(output_path),
+                    detections,
+                    target_classes,
+                )
+                for _, full_path, output_path, detections in work_items
+            ]
+
+            results: list[str | None] = [None] * len(futures)
+            completed = 0
+            failed = 0
+
+            async def _track(future: asyncio.Future, index: int) -> None:
+                nonlocal completed, failed
+                try:
+                    result = await future
+                except Exception as exc:
+                    logger.warning(f"Frame worker raised: {exc}")
+                    result = None
+                results[index] = result
+                completed += 1
+                if result is None:
+                    failed += 1
+                if completed % 100 == 0 or completed == len(futures):
+                    pct = completed / len(futures) * 100
+                    logger.info(f"  Annotated {completed}/{len(futures)} frames ({pct:.0f}%) — {failed} failures")
+
+            await asyncio.gather(*[
+                _track(future, idx)
+                for idx, future in enumerate(futures)
+            ])
+
+        for idx, result in enumerate(results):
+            if result:
+                frame_paths.append(Path(result))
+            else:
+                _, full_path, _, _ = work_items[idx]
+                logger.warning(f"Annotation failed for {full_path}")
 
         if not frame_paths:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -162,6 +277,10 @@ class TimelapseService:
         target_classes: set[str],
     ) -> Image.Image:
         """Draw bounding boxes on a snapshot image for matching class names.
+
+        Kept as a convenience wrapper for callers that want an in-memory
+        PIL Image. The multiprocessing path uses the module-level
+        ``_draw_frame_worker`` instead.
 
         Args:
             image_path: Path to the source JPEG snapshot.

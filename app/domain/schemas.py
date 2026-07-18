@@ -183,6 +183,28 @@ class RetentionResultRead(BaseModel):
     videos_deleted: int = Field(default=0, ge=0)
 
 
+class PurgeRequest(BaseModel):
+    """Validate payload for the destructive purge endpoint."""
+
+    days: int = Field(default=3, ge=1, description="Delete snapshots, analyses and videos older than this many days")
+
+
+class PurgeResultRead(BaseModel):
+    """Serialize the outcome of a destructive purge run.
+
+    All counts are non-negative integers describing how many items
+    were removed from disk and database.
+    """
+
+    raw_snapshots_deleted: int = Field(default=0, ge=0)
+    snapshot_analyses_deleted: int = Field(default=0, ge=0)
+    analysis_jobs_deleted: int = Field(default=0, ge=0)
+    snapshots_deleted: int = Field(default=0, ge=0)
+    snapshot_archives_deleted: int = Field(default=0, ge=0)
+    videos_deleted: int = Field(default=0, ge=0)
+    video_archives_deleted: int = Field(default=0, ge=0)
+
+
 class PendingReviewItem(BaseModel):
     """A snapshot flagged for human review with its metadata."""
 

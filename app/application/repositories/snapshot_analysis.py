@@ -6,7 +6,7 @@ results stored in the ``snapshot_analyses`` table.
 
 from datetime import datetime
 
-from sqlalchemy import select, func, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import SnapshotAnalysis
@@ -21,6 +21,23 @@ class SnapshotAnalysisRepository:
 
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def delete_by_snapshot_ids(self, snapshot_ids: list[int]) -> int:
+        """Delete all analysis records for the given snapshot IDs.
+
+        Args:
+            snapshot_ids: Snapshot primary keys whose analyses should be removed.
+
+        Returns:
+            The number of analysis records deleted.
+        """
+        if not snapshot_ids:
+            return 0
+        result = await self._session.execute(
+            delete(SnapshotAnalysis).where(SnapshotAnalysis.snapshot_id.in_(snapshot_ids))
+        )
+        await self._session.flush()
+        return result.rowcount or 0
 
     async def add(self, analysis: SnapshotAnalysis) -> None:
         """Persist a new analysis result to the database.

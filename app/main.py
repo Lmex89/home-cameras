@@ -21,7 +21,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
-from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead, RetentionResultRead
+from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead, RetentionResultRead, PurgeRequest, PurgeResultRead
 
 os.environ["TZ"] = settings.timezone
 try:
@@ -254,6 +254,47 @@ async def trigger_retention():
         raise
     finally:
         logger.info("Manual retention: resuming capture/analysis schedulers")
+        for jid in capture_ids:
+            scheduler.resume_job(jid)
+        scheduler.resume_job("analysis_processing")
+
+
+@app.post("/api/retention/purge", response_model=PurgeResultRead)
+async def trigger_purge(payload: PurgeRequest):
+    """Permanently delete snapshots, analyses, videos and archives older than *days*.
+
+    Unlike ``/api/retention/run``, this does **not** create ZIP archives.
+    It deletes the raw image files, database rows, and any orphaned archives.
+
+    \f
+    **Warning:** This is destructive and cannot be undone.
+
+    Args:
+        payload: PurgeRequest containing the number of days to keep.
+
+    Returns:
+        PurgeResultRead with counts of deleted items.
+    """
+    from app.core.database import session_factory as _sf
+    from app.application.services.retention_service import RetentionService
+
+    logger.warning(f"Manual purge requested: keep last {payload.days} days")
+    capture_ids = [j.id for j in scheduler.get_jobs() if j.id.startswith("capture_")]
+    for jid in capture_ids:
+        scheduler.pause_job(jid)
+    scheduler.pause_job("analysis_processing")
+
+    try:
+        async with UnitOfWork(_sf) as uow:
+            svc = RetentionService(uow)
+            result = await svc.purge_older_than(payload.days)
+            logger.warning(f"Manual purge complete: {result}")
+            return PurgeResultRead.model_validate(result)
+    except Exception:
+        logger.exception("Manual purge failed")
+        raise
+    finally:
+        logger.info("Manual purge: resuming capture/analysis schedulers")
         for jid in capture_ids:
             scheduler.resume_job(jid)
         scheduler.resume_job("analysis_processing")

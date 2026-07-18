@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     timelapse_frame_duration: float = 0.55
     """Seconds per frame in the annotated timelapse video. Higher = slower."""
 
+    timelapse_workers: int = 3
+    """Number of parallel processes used to draw detection boxes on frames."""
+
     telegram_enabled: bool = False
     """Master toggle for Telegram notifications. Set to ``true`` and provide
     a bot token + chat ID to receive timelapse video reports in chat."""

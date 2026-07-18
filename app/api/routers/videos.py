@@ -181,7 +181,7 @@ async def create_annotated_video(
     except ValueError as e:
         logger.warning(f"Annotated video request rejected: camera={camera_id} reason={e}")
         raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
+    except (RuntimeError, OSError, IsADirectoryError) as e:
         logger.exception(f"Annotated video generation failed: camera={camera_id}")
         raise HTTPException(status_code=500, detail=str(e))
 

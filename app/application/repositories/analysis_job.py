@@ -6,7 +6,7 @@ job table used by the ML pipeline scheduler.
 
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models import AnalysisJob
@@ -21,6 +21,23 @@ class AnalysisJobRepository:
 
     def __init__(self, session: AsyncSession):
         self._session = session
+
+    async def delete_by_snapshot_ids(self, snapshot_ids: list[int]) -> int:
+        """Delete all analysis jobs for the given snapshot IDs.
+
+        Args:
+            snapshot_ids: Snapshot primary keys whose jobs should be removed.
+
+        Returns:
+            The number of analysis jobs deleted.
+        """
+        if not snapshot_ids:
+            return 0
+        result = await self._session.execute(
+            delete(AnalysisJob).where(AnalysisJob.snapshot_id.in_(snapshot_ids))
+        )
+        await self._session.flush()
+        return result.rowcount or 0
 
     async def add(self, job: AnalysisJob) -> None:
         """Persist a new analysis job to the database.
