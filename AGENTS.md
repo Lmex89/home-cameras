@@ -1,5 +1,9 @@
 # Cameras — ONVIF snapshot monitor
 
+## Tool preference
+Always use codegraph_* tools (codegraph_find_symbol, codegraph_context_for_task, etc.) over glob, grep, and read for code search and navigation. Only fall back to built-in tools when codegraph tools cannot satisfy the query.
+
+
 ## Quick start
 
 ```bash
