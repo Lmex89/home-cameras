@@ -121,6 +121,37 @@ For GPU-accelerated ML inference, a separate worker image based on `nvidia/cuda`
 - python-telegram-bot (Telegram video report notifications)
 - ultralytics (YOLO inference, graceful stub mode when missing)
 
+## Codegraph (code context engine)
+
+A local-first code context engine that builds a persistent knowledge graph in SQLite
+for AI coding assistants. Provides symbol lookup, call graph traversal, impact
+analysis, and semantic search — zero cloud dependencies.
+
+### Setup
+
+```bash
+# Install (requires Go 1.23+ and a C compiler)
+go install github.com/isink17/codegraph/cmd/codegraph@latest
+
+# Re-index after code changes
+export PATH="$PATH:$(go env GOPATH)/bin"
+codegraph index .
+```
+
+### Usage
+
+The MCP server is configured in `.mcp.json` and starts automatically with OpenCode.
+Manual CLI queries:
+
+```bash
+codegraph find-symbol . "<query>"     # Find symbols by name
+codegraph callers . --symbol "<name>" # Find callers of a function
+codegraph callees . --symbol "<name>" # Find callees of a function
+codegraph impact . --symbol "<name>"  # Impact analysis
+codegraph search . "<query>"          # Full-text symbol search
+codegraph stats .                     # Graph statistics
+```
+
 ## Mandatory: SOLID principles
 
 Every contribution MUST follow SOLID:
