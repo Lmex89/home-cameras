@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     timelapse_object_classes: str = "person,car,motorcycle"
     """Comma-separated list of object classes to annotate on the timelapse."""
 
-    timelapse_frame_duration: float = 0.55
+    timelapse_frame_duration: float = 0.4675
     """Seconds per frame in the annotated timelapse video. Higher = slower."""
 
     timelapse_workers: int = 3

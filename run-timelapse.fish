@@ -84,7 +84,7 @@ if test -z "$host"
     set host "localhost:8002"
 end
 set api_url "http://$host/api/videos/annotated"
-set timeout 600
+set timeout 1860
 
 _log INFO "Starting annotated timelapse generation"
 _log INFO "  Camera ID : $camera_id"

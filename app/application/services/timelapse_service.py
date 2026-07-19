@@ -251,14 +251,15 @@ class TimelapseService:
                     f.write(f"duration {duration}\n")
 
         output_path = temp_dir / f"timelapse_annotated_{camera_id}_{target_date.isoformat()}.mp4"
+        raw_path = temp_dir / f"raw_{target_date.isoformat()}.mp4"
         cmd = [
             "ffmpeg", "-y",
             "-f", "concat", "-safe", "0", "-i", str(file_list),
             "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-            str(output_path),
+            "-pix_fmt", "yuv420p",
+            str(raw_path),
         ]
-        logger.info(f"Step 5/6: Running ffmpeg ({len(frame_paths)} frames, {duration}s each)...")
+        logger.info(f"Step 5/7: Running ffmpeg ({len(frame_paths)} frames, {duration}s each)...")
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -270,10 +271,30 @@ class TimelapseService:
             error_msg = stderr.decode(errors="replace")[-500:] if stderr else "ffmpeg error"
             logger.error(f"ffmpeg failed for annotated timelapse: camera={camera_id} returncode={proc.returncode} stderr={error_msg}")
             raise RuntimeError(f"Annotated video generation failed: {error_msg}")
-        logger.info(f"Step 5/6 done: ffmpeg completed successfully")
+        logger.info(f"Step 5/7 done: ffmpeg completed successfully")
+
+        logger.info("Step 6/7: Running faststart post-process...")
+        faststart_cmd = [
+            "ffmpeg", "-y", "-i", str(raw_path),
+            "-c", "copy", "-movflags", "+faststart",
+            str(output_path),
+        ]
+        faststart_proc = await asyncio.create_subprocess_exec(
+            *faststart_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, faststart_stderr = await faststart_proc.communicate()
+        if faststart_proc.returncode != 0:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            error_msg = faststart_stderr.decode(errors="replace")[-500:] if faststart_stderr else "faststart ffmpeg error"
+            logger.error(f"faststart failed for annotated timelapse: camera={camera_id} returncode={faststart_proc.returncode} stderr={error_msg}")
+            raise RuntimeError(f"Annotated video faststart failed: {error_msg}")
+        raw_path.unlink(missing_ok=True)
+        logger.info("Step 6/7 done: faststart complete")
 
         size_mb = output_path.stat().st_size / (1024 * 1024)
-        logger.info(f"Step 6/6: Video ready — {size_mb:.1f}MB")
+        logger.info(f"Step 7/7: Video ready — {size_mb:.1f}MB")
         return output_path, temp_dir
 
     @staticmethod
