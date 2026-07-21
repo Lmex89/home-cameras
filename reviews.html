@@ -1074,7 +1074,8 @@ document.addEventListener('keydown', (e) => {
 /* ─── Bulk Selection ─── */
 
 function toggleSelectAll(el) {
-  document.querySelectorAll('#reviewList .bulk-checkbox:not(#selectAll)').forEach(cb => cb.checked = el.checked);
+  const cbs = document.querySelectorAll('#reviewList .bulk-checkbox:not(#selectAll)');
+  cbs.forEach(cb => cb.checked = el.checked);
   updateBulkBar();
 }
 

@@ -226,6 +226,9 @@ async def timelapse_job() -> None:
 
 def schedule_timelapse() -> None:
     """Schedule the daily annotated timelapse generation job."""
+    if not settings.timelapse_enabled:
+        logger.info("Timelapse generation disabled via TIMELAPSE_ENABLED=false")
+        return
     scheduler.add_job(
         timelapse_job,
         trigger=CronTrigger(

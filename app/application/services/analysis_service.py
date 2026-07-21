@@ -15,15 +15,16 @@ from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
 from app.domain.models import AnalysisJob, SnapshotAnalysis, Snapshot
 from app.domain.schemas import PendingReviewItem
-from app.infrastructure.ml.yolo import YOLODetector
+from app.infrastructure.ml.yolo import YOLODetector, get_yolo_detector
 
 
 class AnalysisService:
     """Orchestrate snapshot analysis: queue, process, and review flagging.
 
     Receives a ``UnitOfWork`` via constructor injection and an optional
-    ``YOLODetector``. When no detector is provided a default instance is
-    created (gracefully degrades when ``ultralytics`` is missing).
+    ``YOLODetector``. When no detector is provided the process-wide
+    cached singleton is reused so the YOLO model loads only once,
+    avoiding the per-batch CPU/memory churn that froze the host.
     """
 
     def __init__(self, uow: UnitOfWork, detector: YOLODetector | None = None) -> None:
@@ -31,11 +32,12 @@ class AnalysisService:
 
         Args:
             uow: UnitOfWork wrapping the async SQLAlchemy session.
-            detector: YOLODetector instance. Falls back to a default when
-                None, which works in stub mode without ``ultralytics``.
+            detector: YOLODetector instance. When None the cached
+                singleton from ``get_yolo_detector`` is reused so the
+                model is not reloaded on every batch.
         """
         self._uow = uow
-        self._detector = detector if detector is not None else YOLODetector()
+        self._detector = detector if detector is not None else get_yolo_detector()
 
     async def enqueue(self, snapshot_id: int, job_type: str = "yolo_detection", priority: int = 0) -> AnalysisJob:
         """Create a pending analysis job for a snapshot.
@@ -208,7 +210,7 @@ class AnalysisService:
 
         return False, None
 
-    async def get_pending_reviews(self, limit: int = 50) -> list[PendingReviewItem]:
+    async def get_pending_reviews(self, limit: int = 5000) -> list[PendingReviewItem]:
         """Build a list of pending review items with camera metadata.
 
         Args:

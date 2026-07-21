@@ -77,7 +77,7 @@ class SnapshotAnalysisRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_pending_reviews(self, limit: int = 50) -> list[SnapshotAnalysis]:
+    async def get_pending_reviews(self, limit: int = 5000) -> list[SnapshotAnalysis]:
         """Fetch analyses that are flagged for human review.
 
         Args:

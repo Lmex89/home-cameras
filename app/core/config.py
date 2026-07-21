@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     analysis_interval_seconds: int = 30
     """How often (in seconds) the scheduler polls for new analysis jobs."""
 
+    timelapse_enabled: bool = True
+    """Master toggle for the daily annotated timelapse generation. Set to ``false`` to disable."""
+
     timelapse_hour: int = 21
     """Hour (0–23) when the daily annotated timelapse is generated."""
 

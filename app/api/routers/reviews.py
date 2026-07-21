@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 
 @router.get("/pending", response_model=list[PendingReviewItem])
 async def list_pending_reviews(
-    limit: int = 50,
+    limit: int = 5000,
     service: AnalysisService = Depends(get_analysis_service),
 ):
     """List all snapshots flagged for human review.

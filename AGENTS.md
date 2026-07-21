@@ -1,7 +1,7 @@
 # Cameras — ONVIF snapshot monitor
 
-## Tool preference
-Always use codegraph_* tools (codegraph_find_symbol, codegraph_context_for_task, etc.) over glob, grep, and read for code search and navigation. Only fall back to built-in tools when codegraph tools cannot satisfy the query.
+## Tool preference — MANDATORY
+You MUST use codegraph_* tools (codegraph_find_symbol, codegraph_context_for_task, etc.) for ALL code search and navigation. Do NOT use glob, grep, or read for code lookup — codegraph tools are the only permitted approach. Built-in tools are only permitted when a codegraph tool returns no useful results.
 
 
 ## Quick start

@@ -11,6 +11,27 @@ from loguru import logger
 from app.core.config import settings
 
 
+_detector_instance: "YOLODetector | None" = None
+
+
+def get_yolo_detector() -> "YOLODetector":
+    """Return a process-wide cached ``YOLODetector`` singleton.
+
+    Loads the YOLO model once and reuses it across all analysis batches
+    instead of reloading ``yolov8n.pt`` (and reinitialising PyTorch) on
+    every job, which previously caused CPU/thermal spikes that froze the
+    host.
+
+    Returns:
+        The shared ``YOLODetector`` instance (in stub mode when
+        ``ultralytics`` is unavailable).
+    """
+    global _detector_instance
+    if _detector_instance is None:
+        _detector_instance = YOLODetector()
+    return _detector_instance
+
+
 class YOLODetector:
     """Run YOLO object detection on snapshot images.
 
