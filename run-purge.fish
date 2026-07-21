@@ -47,7 +47,7 @@ end
 # Parse arguments
 set days $argv[1]
 if test -z "$days"
-    set days 3
+    set days 5
     _log INFO "No days provided, using default: $days"
 else
     if not string match -qr '^[0-9]+$' $days
