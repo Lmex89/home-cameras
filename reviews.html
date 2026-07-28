@@ -154,7 +154,8 @@ a:hover { color: var(--amber); }
 /* ─── Tabs ─── */
 .tab-bar {
   display: flex; gap: 0; border-bottom: 1px solid var(--border);
-  background: var(--surface); position: sticky; top: 49px; z-index: 90;
+  background: var(--surface); position: sticky;
+  top: calc(49px + var(--safe-top)); z-index: 90;
 }
 .tab-btn {
   font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
@@ -169,7 +170,7 @@ a:hover { color: var(--amber); }
 /* ─── Content ─── */
 .content { padding: 0; overflow-y: auto; display: flex; flex-direction: column; flex: 1; }
 
-.tab-content { display: none; padding: 12px 12px 24px; }
+.tab-content { display: none; padding: 16px 12px 24px; }
 .tab-content.active { display: block; }
 
 .content-header {
