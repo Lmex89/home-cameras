@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     snapshot_zip_after_days: int = 7
     video_retention_days: int = 30
     default_interval_seconds: int = 60
+    capture_timeout_seconds: int = 120
+    """Maximum seconds a single capture attempt is allowed before being cancelled."""
+    health_check_interval_minutes: int = 10
+    """Minutes between periodic health check runs."""
     timezone: str = "America/Mexico_City"
     yolo_model_path: str = "models/yolov8n.pt"
     """Filesystem path to the YOLO weights file, relative to project root or absolute."""

@@ -5,11 +5,18 @@ and reschedule per-camera capture jobs at fixed intervals, as well
 as a daily retention cleanup job.
 """
 
+import asyncio
 import shutil
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from loguru import logger
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+    JobExecutionEvent,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -22,6 +29,82 @@ from app.infrastructure.telegram import TelegramNotifier
 from app.application.services.snapshot_service import SnapshotService
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
+
+_ALARM_EVENT_NAMES = {
+    EVENT_JOB_ERROR: "ERROR",
+    EVENT_JOB_MISSED: "MISSED",
+    EVENT_JOB_MAX_INSTANCES: "MAX_INSTANCES",
+}
+
+
+def _send_alarm_sync(msg: str) -> None:
+    """Send a Telegram message synchronously for alarm events.
+
+    Uses a direct HTTP POST to the Telegram Bot API so the message is
+    guaranteed to be sent before the listener returns, avoiding the
+    fire-and-forget ``asyncio.ensure_future`` pitfall that silently
+    dropped messages when the event loop was under pressure.
+
+    Args:
+        msg: The alarm message text to send.
+    """
+    import httpx
+
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_chat_id
+    if not settings.telegram_enabled or not token or not chat_id:
+        logger.debug(f"Telegram disabled; would send alarm: {msg[:80]}…")
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(url, json={"chat_id": chat_id, "text": msg})
+            resp.raise_for_status()
+        logger.info(f"Alarm notification sent to Telegram ({len(msg)} chars)")
+    except Exception:
+        logger.exception("Failed to send alarm notification to Telegram")
+
+
+def _alarm_listener(event: JobExecutionEvent) -> None:
+    """Listen for scheduler job failures and send Telegram alerts.
+
+    Triggered when a scheduled job errors, is missed, or hits max instances.
+    Sends a notification via Telegram so the operator is alerted immediately.
+
+    Args:
+        event: The APScheduler job execution event.
+    """
+    event_name = _ALARM_EVENT_NAMES.get(event.code, f"UNKNOWN({event.code})")
+    job_id = event.job_id
+    scheduled = event.scheduled_run_time.isoformat() if event.scheduled_run_time else "N/A"
+
+    logger.error(
+        f"ALARM: Job '{job_id}' {event_name} "
+        f"(scheduled: {scheduled})"
+    )
+
+    if event.exception:
+        logger.error(f"ALARM exception: {event.exception}")
+    if event.traceback:
+        logger.error(f"ALARM traceback: {event.traceback[:500]}")
+
+    msg = (
+        f"Camera Monitor ALARM\n"
+        f"Event: {event_name}\n"
+        f"Job: {job_id}\n"
+        f"Scheduled: {scheduled}\n"
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    if event.exception:
+        msg += f"\nError: {str(event.exception)[:200]}"
+
+    _send_alarm_sync(msg)
+
+
+scheduler.add_listener(
+    _alarm_listener,
+    EVENT_JOB_ERROR | EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES,
+)
 
 
 async def capture_job(camera_id: int) -> None:
@@ -40,9 +123,17 @@ async def capture_job(camera_id: int) -> None:
         onvif = ONVIFCameraClient()
         service = SnapshotService(uow, onvif)
         try:
-            snapshot = await service.capture(camera)
+            snapshot = await asyncio.wait_for(
+                service.capture(camera),
+                timeout=settings.capture_timeout_seconds,
+            )
             status = "ok" if snapshot.status == "success" else "error"
             logger.info(f"Camera {camera.name} ({camera.host}): snapshot {status}")
+        except TimeoutError:
+            logger.error(
+                f"Camera {camera.name} ({camera.host}): capture timed out "
+                f"after {settings.capture_timeout_seconds}s"
+            )
         except Exception:
             logger.exception(f"Camera {camera.name}: capture failed")
 
@@ -241,3 +332,61 @@ def schedule_timelapse() -> None:
         name="Daily annotated timelapse generation",
     )
     logger.info(f"Scheduled daily annotated timelapse at {settings.timelapse_hour:02d}:{settings.timelapse_minute:02d} (local time)")
+
+
+async def health_check_job() -> None:
+    """Periodic self-check: verify snapshots are being captured on schedule.
+
+    Queries the database for the most recent successful snapshot across
+    all enabled cameras. If no camera has produced a snapshot within the
+    configured threshold, sends a Telegram alarm. This catches hangs
+    that the event listener cannot detect (e.g. event loop blocked).
+    """
+    from app.application.services.snapshot_service import SnapshotService
+
+    threshold = settings.capture_timeout_seconds * 2
+    cutoff = datetime.now(ZoneInfo(settings.timezone)) - timedelta(seconds=threshold)
+
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            cameras = await uow.cameras.get_enabled()
+            stale_cameras = []
+            for cam in cameras:
+                last = await uow.snapshots.get_last_by_camera(cam.id)
+                if not last or last.captured_at.replace(tzinfo=ZoneInfo(settings.timezone)) < cutoff:
+                    age = "never" if not last else str(
+                        datetime.now(ZoneInfo(settings.timezone))
+                        - last.captured_at.replace(tzinfo=ZoneInfo(settings.timezone))
+                    )
+                    stale_cameras.append(f"{cam.name} (ID {cam.id}): last {age} ago")
+
+            if stale_cameras:
+                msg = (
+                    f"Camera Monitor HEALTH ALARM\n"
+                    f"No recent snapshots (threshold: {threshold}s)\n"
+                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    + "\n".join(f"  - {c}" for c in stale_cameras)
+                )
+                logger.error(f"Health check failed: {len(stale_cameras)} stale cameras")
+                notifier = TelegramNotifier.from_settings()
+                await notifier.send_message(msg)
+            else:
+                logger.debug(f"Health check OK: {len(cameras)} cameras active")
+    except Exception:
+        logger.exception("Health check job failed")
+
+
+def schedule_health_check(interval_minutes: int = 10) -> None:
+    """Schedule the periodic health check job.
+
+    Args:
+        interval_minutes: Minutes between health check runs.
+    """
+    scheduler.add_job(
+        health_check_job,
+        trigger=IntervalTrigger(minutes=interval_minutes),
+        id="health_check",
+        replace_existing=True,
+        name="Periodic health check",
+    )
+    logger.info(f"Scheduled health check every {interval_minutes} minutes")
