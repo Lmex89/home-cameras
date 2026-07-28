@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Review — Sentinel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,500;0,700;1,300&display=swap" rel="stylesheet">
@@ -22,10 +24,12 @@
   --green: #44ddaa;
   --glow-amber: 0 0 20px rgba(255,176,0,0.15);
   --glow-cyan: 0 0 20px rgba(0,212,170,0.12);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 14px; }
+html { font-size: 14px; -webkit-tap-highlight-color: transparent; }
 
 body {
   background: var(--bg);
@@ -33,6 +37,7 @@ body {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 300;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   position: relative;
 }
@@ -52,105 +57,159 @@ a:hover { color: var(--amber); }
 /* ─── Header ─── */
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
   background: var(--surface); position: sticky; top: 0; z-index: 100;
+  padding-top: calc(12px + var(--safe-top));
 }
-.header-left { display: flex; align-items: center; gap: 16px; }
-.logo { font-size: 1.2rem; font-weight: 700; color: var(--amber); letter-spacing: 0.05em; text-shadow: var(--glow-amber); }
+.header-left { display: flex; align-items: center; gap: 10px; }
+.logo { font-size: 1rem; font-weight: 700; color: var(--amber); letter-spacing: 0.05em; text-shadow: var(--glow-amber); }
 .logo span { color: var(--cyan); }
-.header nav { display: flex; gap: 12px; }
+.header nav { display: flex; gap: 8px; }
 .header nav a {
-  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em;
-  padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; transition: all 0.2s;
+  font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; transition: all 0.2s;
 }
 .header nav a:hover { border-color: var(--amber); color: var(--amber); background: rgba(255,176,0,0.06); }
 .header nav a.active { border-color: var(--amber); color: var(--bg); background: var(--amber); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+
+.filter-toggle-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+  padding: 6px 12px; background: transparent; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px;
+}
+.filter-toggle-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.filter-toggle-btn.has-filters { border-color: var(--amber); color: var(--amber); }
+
+.refresh-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+  padding: 6px 12px; background: transparent; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+}
+.refresh-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,170,0.06); }
 
 /* ─── Stats Bar ─── */
 .stats-bar {
-  display: flex; gap: 0; padding: 0 24px; background: var(--surface);
+  display: flex; gap: 0; padding: 0 16px; background: var(--surface);
   border-bottom: 1px solid var(--border); overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.stats-bar::-webkit-scrollbar { display: none; }
 .stat {
   display: flex; flex-direction: column; align-items: center;
-  padding: 12px 24px; border-right: 1px solid var(--border);
-  min-width: 100px; transition: background 0.2s; cursor: default;
+  padding: 10px 16px; border-right: 1px solid var(--border);
+  min-width: 80px; transition: background 0.2s; cursor: default; flex-shrink: 0;
 }
 .stat:last-child { border-right: none; }
 .stat:hover { background: var(--surface2); }
-.stat-value { font-size: 1.6rem; font-weight: 500; color: var(--amber); line-height: 1.2; }
-.stat-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-top: 4px; white-space: nowrap; }
+.stat-value { font-size: 1.3rem; font-weight: 500; color: var(--amber); line-height: 1.2; }
+.stat-label { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-top: 2px; white-space: nowrap; }
 .stat.stat-cyan .stat-value { color: var(--cyan); }
 .stat.stat-green .stat-value { color: var(--green); }
 .stat.stat-red .stat-value { color: var(--red); }
 
 /* ─── Main Layout ─── */
-.main { display: grid; grid-template-columns: 320px 1fr; gap: 0; min-height: calc(100vh - 110px); }
+.main { display: flex; flex-direction: column; min-height: calc(100vh - 100px); min-height: calc(100dvh - 100px); }
 
-/* ─── Sidebar / Filters ─── */
-.sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; }
-.sidebar h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-.filter-group { margin-bottom: 20px; }
-.filter-group label { display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 6px; }
-.filter-group select,.filter-group input {
-  width: 100%; padding: 8px 10px; background: var(--surface2);
-  border: 1px solid var(--border); border-radius: 4px; color: var(--text);
-  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; outline: none; transition: border-color 0.2s;
+/* ─── Sidebar / Filters (mobile: slide-over drawer) ─── */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  z-index: 200; opacity: 0; transition: opacity 0.3s;
 }
+.sidebar-overlay.open { display: block; opacity: 1; }
+
+.sidebar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  overflow-y: auto; max-height: 0; transition: max-height 0.3s ease, padding 0.3s ease;
+  padding: 0 16px;
+}
+.sidebar.open { max-height: 70vh; padding: 16px; }
+.sidebar h3 { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.filter-group { margin-bottom: 16px; }
+.filter-group label { display: block; font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 6px; }
+.filter-group select,.filter-group input {
+  width: 100%; padding: 10px 12px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px; color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; outline: none; transition: border-color 0.2s;
+  -webkit-appearance: none; appearance: none;
+}
+.filter-group select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236a6a78' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
 .filter-group select:focus,.filter-group input:focus { border-color: var(--amber); }
 .filter-group select option { background: var(--surface2); }
 
-/* Detection class legend */
+/* Date input iOS fix */
+.filter-group input[type="date"] {
+  -webkit-appearance: none; appearance: none;
+  min-height: 44px; font-size: 0.85rem;
+  position: relative;
+}
+.filter-group input[type="date"]::-webkit-clear-handler { display: none; }
+
 .legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.6rem; color: var(--text-dim); }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.55rem; color: var(--text-dim); }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
 
 /* ─── Tabs ─── */
 .tab-bar {
-  display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border);
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  background: var(--surface); position: sticky; top: 49px; z-index: 90;
 }
 .tab-btn {
   font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
-  padding: 10px 20px; border: none; border-bottom: 2px solid transparent;
+  padding: 12px 16px; border: none; border-bottom: 2px solid transparent;
   background: transparent; color: var(--text-dim); cursor: pointer;
-  transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.08em;
+  transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.06em;
+  flex: 1; text-align: center; min-height: 44px;
 }
 .tab-btn:hover { color: var(--text); background: var(--surface2); }
 .tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); background: rgba(255,176,0,0.04); }
 
 /* ─── Content ─── */
-.content { padding: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.content { padding: 0; overflow-y: auto; display: flex; flex-direction: column; flex: 1; }
 
-.tab-content { display: none; padding: 20px; }
+.tab-content { display: none; padding: 12px; }
 .tab-content.active { display: block; }
 
 .content-header {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
 }
-.content-header h2 { font-size: 0.9rem; font-weight: 500; color: var(--text); }
+.content-header h2 { font-size: 0.8rem; font-weight: 500; color: var(--text); }
 .content-header .count-badge {
-  font-size: 0.65rem; padding: 4px 12px; border: 1px solid var(--amber);
+  font-size: 0.6rem; padding: 3px 10px; border: 1px solid var(--amber);
   border-radius: 12px; color: var(--amber);
 }
 
-.refresh-btn {
-  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
-  padding: 6px 14px; background: transparent; border: 1px solid var(--border);
-  border-radius: 4px; color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+/* ─── Inline Date Picker (mobile-friendly, always visible in detections tab) ─── */
+.inline-date-row {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+  padding: 10px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; flex-wrap: wrap;
 }
-.refresh-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,170,0.06); }
+.inline-date-row label {
+  font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--text-dim); white-space: nowrap;
+}
+.inline-date-row input[type="date"] {
+  flex: 1; min-width: 140px; padding: 10px 12px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 4px; color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; outline: none;
+  -webkit-appearance: none; appearance: none; min-height: 44px;
+}
+.inline-date-row input[type="date"]:focus { border-color: var(--amber); }
 
 /* ─── Bulk Selection ─── */
-.bulk-checkbox { accent-color: var(--amber); cursor: pointer; width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
+.bulk-checkbox { accent-color: var(--amber); cursor: pointer; width: 18px; height: 18px; flex-shrink: 0; }
 .select-all-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .select-all-wrap label { font-size: 0.65rem; color: var(--text-dim); cursor: pointer; }
 
 /* ─── Review Cards ─── */
-.review-list { display: flex; flex-direction: column; gap: 12px; }
+.review-list { display: flex; flex-direction: column; gap: 10px; }
 .review-card {
-  display: grid; grid-template-columns: 24px 180px 1fr auto; gap: 12px;
+  display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 12px; transition: all 0.2s; cursor: default; position: relative;
+  padding: 10px; transition: all 0.2s; cursor: default; position: relative;
 }
 .review-card:hover { border-color: rgba(255,176,0,0.3); background: var(--surface2); }
 .review-card.reviewed { opacity: 0.4; border-color: var(--green); }
@@ -160,16 +219,21 @@ a:hover { color: var(--amber); }
   border: 1px solid var(--green); padding: 2px 8px; border-radius: 3px;
 }
 
-.review-thumb { width: 180px; height: 120px; object-fit: cover; border-radius: 4px; cursor: pointer; transition: transform 0.2s; background: var(--surface2); }
-.review-thumb:hover { transform: scale(1.03); }
-.review-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.review-camera { font-size: 0.8rem; font-weight: 500; color: var(--text); }
-.review-time { font-size: 0.65rem; color: var(--text-dim); }
+.review-card-top { display: flex; gap: 10px; }
+.review-thumb {
+  width: 100%; max-width: 200px; height: 130px; object-fit: cover;
+  border-radius: 4px; cursor: pointer; transition: transform 0.2s;
+  background: var(--surface2); flex-shrink: 0;
+}
+.review-thumb:hover { transform: scale(1.02); }
+.review-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.review-camera { font-size: 0.75rem; font-weight: 500; color: var(--text); }
+.review-time { font-size: 0.6rem; color: var(--text-dim); }
 
 .reason-badge {
-  display: inline-flex; align-items: center; gap: 4px; font-size: 0.6rem;
-  padding: 3px 10px; border-radius: 3px; text-transform: uppercase;
-  letter-spacing: 0.08em; margin-top: 2px;
+  display: inline-flex; align-items: center; gap: 4px; font-size: 0.55rem;
+  padding: 3px 8px; border-radius: 3px; text-transform: uppercase;
+  letter-spacing: 0.06em; margin-top: 2px;
 }
 .reason-badge.person-after-hours { background: rgba(255,176,0,0.12); color: var(--amber); border: 1px solid rgba(255,176,0,0.25); }
 .reason-badge.high-count { background: rgba(255,68,85,0.12); color: var(--red); border: 1px solid rgba(255,68,85,0.25); }
@@ -177,11 +241,11 @@ a:hover { color: var(--amber); }
 
 .detection-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .detection-tag {
-  font-size: 0.6rem; padding: 2px 8px; border-radius: 3px;
+  font-size: 0.55rem; padding: 2px 6px; border-radius: 3px;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--text-dim); display: inline-flex; align-items: center; gap: 4px;
 }
-.detection-tag .conf { font-size: 0.55rem; color: var(--text-dim); opacity: 0.6; }
+.detection-tag .conf { font-size: 0.5rem; color: var(--text-dim); opacity: 0.6; }
 .detection-tag.person { border-color: var(--amber); color: var(--amber); }
 .detection-tag.car { border-color: var(--cyan); color: var(--cyan); }
 .detection-tag.train { border-color: var(--red); color: var(--red); }
@@ -197,12 +261,12 @@ a:hover { color: var(--amber); }
 .detection-tag.truck { border-color: #88aacc; color: #88aacc; }
 .detection-tag.cat { border-color: #dd88aa; color: #dd88aa; }
 
-.review-actions { display: flex; flex-direction: column; gap: 6px; justify-content: flex-start; }
+.review-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .btn-review {
   font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
-  padding: 6px 14px; border-radius: 4px; border: 1px solid;
+  padding: 8px 14px; border-radius: 4px; border: 1px solid;
   cursor: pointer; transition: all 0.2s; text-transform: uppercase;
-  letter-spacing: 0.08em; white-space: nowrap;
+  letter-spacing: 0.06em; white-space: nowrap; min-height: 36px;
 }
 .btn-approve { background: transparent; border-color: var(--green); color: var(--green); }
 .btn-approve:hover { background: var(--green); color: var(--bg); }
@@ -212,52 +276,55 @@ a:hover { color: var(--amber); }
 .btn-view:hover { border-color: var(--cyan); color: var(--cyan); }
 
 /* ─── Detection Grid ─── */
-.detection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.detection-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
 .detection-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 10px; transition: all 0.2s; cursor: default;
+  padding: 8px; transition: all 0.2s; cursor: default;
 }
 .detection-card:hover { border-color: rgba(0,212,170,0.25); background: var(--surface2); }
 .detection-card .thumb {
-  width: 100%; height: 140px; object-fit: cover; border-radius: 4px;
+  width: 100%; height: 100px; object-fit: cover; border-radius: 4px;
   cursor: pointer; transition: transform 0.2s; background: var(--surface2);
 }
 .detection-card .thumb:hover { transform: scale(1.02); }
 .detection-card .meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
-.detection-card .cam { font-size: 0.65rem; color: var(--cyan); }
-.detection-card .time { font-size: 0.55rem; color: var(--text-dim); }
+.detection-card .cam { font-size: 0.6rem; color: var(--cyan); }
+.detection-card .time { font-size: 0.5rem; color: var(--text-dim); }
 .detection-card .objs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 
 /* ─── Date range pills ─── */
-.date-pills { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.date-pills { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
 .date-pill {
   font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
-  padding: 4px 12px; border: 1px solid var(--border); border-radius: 14px;
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 14px;
   background: transparent; color: var(--text-dim); cursor: pointer;
-  transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.06em;
+  transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.04em;
+  min-height: 32px;
 }
 .date-pill:hover { border-color: var(--cyan); color: var(--cyan); }
 .date-pill.active { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
 
 /* ─── Class filter pills ─── */
-.class-pills { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+.class-pills { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
 .class-pill {
   font-family: 'JetBrains Mono', monospace; font-size: 0.55rem;
-  padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border);
+  padding: 5px 10px; border-radius: 12px; border: 1px solid var(--border);
   background: transparent; color: var(--text-dim); cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s; min-height: 28px;
 }
 .class-pill:hover { border-color: var(--amber); color: var(--amber); }
 .class-pill.active { background: var(--amber); color: var(--bg); border-color: var(--amber); }
 .class-pill .cnt { opacity: 0.5; margin-left: 3px; }
 
-/* ─── Summary bar (detections tab) ─── */
+/* ─── Summary bar ─── */
 .summary-bar {
-  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 0;
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 0;
 }
 .summary-chip {
   display: flex; align-items: center; gap: 6px;
-  font-size: 0.6rem; padding: 4px 12px 4px 8px;
+  font-size: 0.55rem; padding: 4px 10px 4px 8px;
   background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
 }
 .summary-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
@@ -265,75 +332,157 @@ a:hover { color: var(--amber); }
 
 /* ─── Lightbox ─── */
 .lightbox {
-  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92);
-  z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);
-  flex-direction: column;
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95);
+  z-index: 10000; justify-content: center; align-items: center;
+  flex-direction: column; touch-action: pan-y;
+  padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
 }
 .lightbox.open { display: flex; }
-.lightbox .lb-img-wrap { position: relative; display: flex; align-items: center; justify-content: center; max-width: 95vw; max-height: 85vh; }
-.lightbox img { max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 4px; box-shadow: 0 0 60px rgba(0,0,0,0.8); }
-.lightbox-close { position: absolute; top: 20px; right: 28px; font-size: 1.4rem; color: var(--text-dim); cursor: pointer; border: none; background: none; font-family: 'JetBrains Mono', monospace; transition: color 0.2s; z-index: 2; }
+.lightbox .lb-img-wrap {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  max-width: 95vw; max-height: 80vh; user-select: none;
+}
+.lightbox img {
+  max-width: 100%; max-height: 80vh; object-fit: contain;
+  border-radius: 4px; box-shadow: 0 0 60px rgba(0,0,0,0.8);
+  user-select: none; -webkit-user-drag: none;
+}
+.lightbox-close {
+  position: absolute; top: calc(12px + var(--safe-top)); right: 16px;
+  font-size: 1.4rem; color: var(--text-dim); cursor: pointer;
+  border: none; background: rgba(0,0,0,0.5); font-family: 'JetBrains Mono', monospace;
+  transition: color 0.2s; z-index: 2; width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+}
 .lightbox-close:hover { color: var(--amber); }
-.lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; background: rgba(255,255,255,0.04); border: none; color: #fff; font-size: 1.6rem; padding: 16px 10px; cursor: pointer; border-radius: 6px; font-family: 'JetBrains Mono', monospace; transition: background 0.2s; }
-.lightbox-nav:hover { background: rgba(255,255,255,0.1); }
-.lightbox-prev { left: 10px; }
-.lightbox-next { right: 10px; }
-.lightbox-info { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.35); font-size: 0.65rem; background: rgba(0,0,0,0.5); padding: 3px 12px; border-radius: 4px; white-space: nowrap; }
+.lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  background: rgba(255,255,255,0.06); border: none; color: #fff;
+  font-size: 1.8rem; cursor: pointer; border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace; transition: background 0.2s;
+  width: 48px; height: 64px; display: flex; align-items: center; justify-content: center;
+}
+.lightbox-nav:hover { background: rgba(255,255,255,0.12); }
+.lightbox-nav:active { background: rgba(255,255,255,0.2); }
+.lightbox-prev { left: 8px; }
+.lightbox-next { right: 8px; }
+.lightbox-info {
+  position: absolute; bottom: calc(16px + var(--safe-bottom)); left: 50%;
+  transform: translateX(-50%); color: rgba(255,255,255,0.5);
+  font-size: 0.65rem; background: rgba(0,0,0,0.6); padding: 6px 16px;
+  border-radius: 4px; white-space: nowrap;
+}
+.lightbox-meta {
+  position: absolute; top: calc(12px + var(--safe-top)); left: 16px;
+  color: rgba(255,255,255,0.4); font-size: 0.6rem;
+  background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 4px;
+  max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* ─── Empty / Loading ─── */
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text-dim); text-align: center; }
-.empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
-.empty-state p { font-size: 0.75rem; }
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--text-dim); text-align: center; }
+.empty-state .icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.4; }
+.empty-state p { font-size: 0.7rem; }
 .loading { display: flex; align-items: center; justify-content: center; padding: 40px; }
 .loading::after { content: ''; width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--amber); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ─── Toast ─── */
-.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; }
-.toast { padding: 10px 18px; border-radius: 4px; font-size: 0.7rem; border: 1px solid; animation: toastIn 0.3s ease; font-family: 'JetBrains Mono', monospace; }
+.toast-container { position: fixed; bottom: calc(16px + var(--safe-bottom)); left: 50%; transform: translateX(-50%); z-index: 99999; display: flex; flex-direction: column; gap: 8px; width: 90vw; max-width: 320px; }
+.toast { padding: 10px 16px; border-radius: 6px; font-size: 0.65rem; border: 1px solid; animation: toastIn 0.3s ease; font-family: 'JetBrains Mono', monospace; text-align: center; }
 .toast.success { background: rgba(68,221,170,0.1); border-color: var(--green); color: var(--green); }
 .toast.error { background: rgba(255,68,85,0.1); border-color: var(--red); color: var(--red); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* ─── Responsive ─── */
-@media (max-width: 900px) {
-  .main { grid-template-columns: 1fr; }
-  .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 200px; }
-  .review-card { grid-template-columns: 24px 120px 1fr; }
-  .review-thumb { width: 120px; height: 80px; }
-  .review-actions { grid-column: span 2; flex-direction: row; }
-  .detection-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+/* ─── Tablet (600px+) ─── */
+@media (min-width: 600px) {
+  .header { padding: 14px 20px; }
+  .logo { font-size: 1.1rem; }
+  .header nav a { font-size: 0.75rem; padding: 8px 14px; }
+  .stat { padding: 12px 20px; min-width: 100px; }
+  .stat-value { font-size: 1.5rem; }
+  .stat-label { font-size: 0.6rem; }
+  .detection-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .detection-card .thumb { height: 130px; }
+  .review-card { flex-direction: row; flex-wrap: wrap; }
+  .review-card-top { flex: 1; min-width: 280px; }
+  .review-thumb { width: 180px; height: 120px; }
+  .review-actions { flex-direction: row; align-items: flex-start; margin-top: 0; min-width: 200px; justify-content: flex-end; }
+  .tab-content { padding: 16px; }
+  .tab-btn { font-size: 0.8rem; padding: 14px 20px; }
+  .content-header h2 { font-size: 0.9rem; }
+  .detection-tag { font-size: 0.6rem; padding: 3px 8px; }
+  .btn-review { font-size: 0.65rem; }
+  .lightbox-nav { width: 56px; height: 72px; font-size: 2rem; }
+  .lightbox-prev { left: 12px; }
+  .lightbox-next { right: 12px; }
+  .toast-container { left: auto; right: 24px; transform: none; width: auto; max-width: 320px; }
 }
 
-@media (min-width: 901px) {
-  .review-card { grid-template-columns: 24px 220px 1fr auto; }
-  .header nav a { font-size: 0.95rem; padding: 8px 16px; }
-  .refresh-btn { font-size: 0.8rem; padding: 8px 18px; }
-  .tab-btn { font-size: 0.85rem; padding: 12px 24px; }
-  .stat-value { font-size: 2rem; }
-  .stat-label { font-size: 0.72rem; }
-  .review-thumb { width: 220px; height: 150px; }
-  .review-camera { font-size: 1rem; }
-  .review-time { font-size: 0.8rem; }
-  .reason-badge { font-size: 0.72rem; padding: 4px 12px; }
-  .btn-review { font-size: 0.72rem; padding: 8px 18px; }
-  .content-header h2 { font-size: 1.1rem; }
-  .count-badge { font-size: 0.8rem; padding: 5px 16px; }
-  .sidebar h3 { font-size: 0.8rem; }
-  .filter-group label { font-size: 0.72rem; }
-  .filter-group select, .filter-group input { font-size: 0.9rem; padding: 10px 12px; }
-  .date-pill { font-size: 0.72rem; padding: 6px 16px; }
-  .class-pill { font-size: 0.67rem; padding: 5px 14px; }
-  .detection-card .thumb { height: 170px; }
-  .detection-card .cam { font-size: 0.8rem; }
-  .detection-card .time { font-size: 0.67rem; }
-  .detection-tag { font-size: 0.72rem; padding: 3px 10px; }
-  .legend-item { font-size: 0.72rem; }
-  .summary-chip { font-size: 0.72rem; padding: 5px 14px 5px 10px; }
-  #loadMoreBtn { font-size: 0.8rem; padding: 12px 40px; }
-  .lightbox-nav { font-size: 2rem; padding: 20px 14px; }
-  .lightbox-close { font-size: 1.7rem; top: 24px; right: 32px; }
-  .lightbox-info { font-size: 0.8rem; padding: 5px 16px; }
+/* ─── Desktop (900px+) ─── */
+@media (min-width: 900px) {
+  .header { padding: 16px 24px; }
+  .logo { font-size: 1.2rem; }
+  .header nav a { font-size: 0.85rem; padding: 8px 16px; }
+  .filter-toggle-btn { font-size: 0.75rem; padding: 8px 16px; }
+  .refresh-btn { font-size: 0.75rem; padding: 8px 16px; }
+
+  .main { display: grid; grid-template-columns: 280px 1fr; flex-direction: row; }
+
+  .sidebar-overlay { display: none !important; }
+  .sidebar {
+    border-bottom: none; border-right: 1px solid var(--border);
+    max-height: none !important; padding: 16px !important;
+    overflow-y: auto; position: sticky; top: 97px;
+    max-height: calc(100vh - 97px) !important;
+  }
+
+  .tab-bar { top: 97px; }
+  .tab-btn { font-size: 0.85rem; padding: 14px 24px; }
+
+  .stat { padding: 12px 24px; min-width: 110px; }
+  .stat-value { font-size: 1.8rem; }
+  .stat-label { font-size: 0.65rem; }
+
+  .tab-content { padding: 20px; }
+  .content-header h2 { font-size: 1rem; }
+  .count-badge { font-size: 0.7rem; padding: 4px 14px; }
+
+  .detection-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .detection-card .thumb { height: 160px; }
+  .detection-card .cam { font-size: 0.7rem; }
+  .detection-card .time { font-size: 0.6rem; }
+
+  .review-card { grid-template-columns: 24px 200px 1fr auto; display: grid; gap: 12px; align-items: start; }
+  .review-thumb { width: 200px; height: 140px; }
+  .review-camera { font-size: 0.9rem; }
+  .review-time { font-size: 0.7rem; }
+  .reason-badge { font-size: 0.6rem; padding: 4px 10px; }
+  .review-actions { flex-direction: column; }
+  .btn-review { font-size: 0.65rem; padding: 8px 16px; }
+
+  .date-pill { font-size: 0.65rem; padding: 6px 14px; }
+  .class-pill { font-size: 0.6rem; padding: 5px 12px; }
+  .detection-tag { font-size: 0.65rem; padding: 3px 10px; }
+  .summary-chip { font-size: 0.65rem; padding: 5px 12px 5px 10px; }
+  .legend-item { font-size: 0.65rem; }
+
+  .lightbox-nav { width: 60px; height: 80px; font-size: 2.2rem; }
+  .lightbox-prev { left: 16px; }
+  .lightbox-next { right: 16px; }
+  .lightbox-close { font-size: 1.6rem; top: 20px; right: 24px; }
+  .lightbox-info { font-size: 0.75rem; padding: 6px 18px; }
+  .lightbox-meta { font-size: 0.7rem; }
+
+  #loadMoreBtn { font-size: 0.75rem; padding: 12px 36px; }
+}
+
+/* ─── Large desktop (1200px+) ─── */
+@media (min-width: 1200px) {
+  .main { grid-template-columns: 320px 1fr; }
+  .detection-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .review-card { grid-template-columns: 24px 240px 1fr auto; }
+  .review-thumb { width: 240px; height: 160px; }
 }
 </style>
 </head>
@@ -347,7 +496,12 @@ a:hover { color: var(--amber); }
       <a href="/reviews.html" class="active">Review</a>
     </nav>
   </div>
-  <button class="refresh-btn" onclick="loadAll()">⟳ refresh</button>
+  <div class="header-actions">
+    <button class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleSidebar()">
+      <span>☰</span> Filters
+    </button>
+    <button class="refresh-btn" onclick="loadAll()">⟳</button>
+  </div>
 </div>
 
 <div class="stats-bar" id="statsBar">
@@ -372,6 +526,8 @@ a:hover { color: var(--amber); }
     <span class="stat-label">Detected Today</span>
   </div>
 </div>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
 <div class="main">
   <div class="sidebar" id="sidebar">
@@ -401,11 +557,6 @@ a:hover { color: var(--amber); }
       </select>
     </div>
 
-    <div class="filter-group" id="filterDateGroup" style="display:none">
-      <label for="filterDate">Pick a day</label>
-      <input type="date" id="filterDate" onchange="onDateChange()">
-    </div>
-
     <div class="filter-group">
       <label>Detection Class Legend</label>
       <div class="legend">
@@ -422,16 +573,16 @@ a:hover { color: var(--amber); }
       </div>
     </div>
 
-    <div class="filter-group" style="margin-top:16px">
+    <div class="filter-group" style="margin-top:12px">
       <h3 style="border:none; margin-bottom:4px">Today's Summary</h3>
-      <div id="detectionSummary" style="font-size:0.65rem; color:var(--text-dim); line-height:1.8">Loading...</div>
+      <div id="detectionSummary" style="font-size:0.6rem; color:var(--text-dim); line-height:1.8">Loading...</div>
     </div>
   </div>
 
   <div class="content">
     <div class="tab-bar">
       <button class="tab-btn active" onclick="switchTab('reviews')" id="tabBtn-reviews">⚠ Pending</button>
-      <button class="tab-btn" onclick="switchTab('detections')" id="tabBtn-detections">◈ All Detections</button>
+      <button class="tab-btn" onclick="switchTab('detections')" id="tabBtn-detections">◈ Detections</button>
     </div>
 
     <!-- PENDING REVIEWS TAB -->
@@ -440,8 +591,8 @@ a:hover { color: var(--amber); }
         <h2>Pending Reviews <span class="count-badge" id="reviewCount">0</span></h2>
       </div>
       <div id="bulkBar" style="display:none;padding:10px 0;border-bottom:1px solid var(--border);margin-bottom:12px">
-        <span id="bulkCount" style="font-size:0.7rem;color:var(--text-dim)">0 selected</span>
-        <button class="btn-review btn-approve" onclick="bulkAction(false)" style="margin-left:12px">✓ Approve All</button>
+        <span id="bulkCount" style="font-size:0.65rem;color:var(--text-dim)">0 selected</span>
+        <button class="btn-review btn-approve" onclick="bulkAction(false)" style="margin-left:8px">✓ Approve All</button>
         <button class="btn-review btn-dismiss" onclick="bulkAction(false,'false_positive')" style="margin-left:6px">✕ Dismiss All</button>
         <button class="btn-review btn-view" onclick="deselectAll()" style="margin-left:6px">Clear</button>
       </div>
@@ -452,6 +603,10 @@ a:hover { color: var(--amber); }
     <div class="tab-content" id="tab-detections">
       <div class="content-header">
         <h2>All Detected Objects</h2>
+      </div>
+      <div class="inline-date-row">
+        <label for="filterDateInline">Date</label>
+        <input type="date" id="filterDateInline" onchange="onDateChange()">
       </div>
       <div id="summaryBar" class="summary-bar"></div>
       <div id="datePills" class="date-pills"></div>
@@ -465,11 +620,14 @@ a:hover { color: var(--amber); }
   </div>
 </div>
 
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+<div class="lightbox" id="lightbox">
   <button class="lightbox-close" onclick="closeLightbox()">✕</button>
   <button class="lightbox-nav lightbox-prev" id="lbPrev" onclick="lbPrev()">‹</button>
-  <div class="lb-img-wrap"><img id="lightboxImg" src="" alt="Snapshot"></div>
+  <div class="lb-img-wrap" id="lbImgWrap">
+    <img id="lightboxImg" src="" alt="Snapshot">
+  </div>
   <button class="lightbox-nav lightbox-next" id="lbNext" onclick="lbNext()">›</button>
+  <div class="lightbox-meta" id="lbMeta"></div>
   <div class="lightbox-info" id="lbInfo"></div>
 </div>
 
@@ -488,7 +646,7 @@ const API = {
 let allReviews = [];
 let filteredReviews = [];
 let detectionStats = {};
-let allDetections = [];  // flat list of {snap, analysis, camName}
+let allDetections = [];
 let filteredDetections = [];
 let activeTab = 'reviews';
 let cameras = [];
@@ -535,6 +693,21 @@ function tagClass(cls) {
   return safe.includes(cls) ? cls.replace(' ', ' ') : 'other';
 }
 
+/* ─── Sidebar Toggle ─── */
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const isDesktop = window.innerWidth >= 900;
+  if (isDesktop) return;
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('open');
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+
 /* ─── Tab Switching ─── */
 function switchTab(tab) {
   activeTab = tab;
@@ -543,10 +716,8 @@ function switchTab(tab) {
   document.getElementById(`tabBtn-${tab}`).classList.add('active');
   document.getElementById(`tab-${tab}`).classList.add('active');
 
-  // Toggle sidebar filters
   document.getElementById('filterReasonGroup').style.display = tab === 'reviews' ? 'block' : 'none';
   document.getElementById('filterClassGroup').style.display = tab === 'detections' ? 'block' : 'none';
-  document.getElementById('filterDateGroup').style.display = tab === 'detections' ? 'block' : 'none';
 
   if (tab === 'detections' && !detectionsLoaded) {
     loadDetections();
@@ -569,7 +740,7 @@ async function loadReviews() {
   }
 }
 
-/* ─── Load Detections from API (lazy, paginated) ─── */
+/* ─── Load Detections ─── */
 async function loadDetections(reset = true) {
   if (reset) {
     detectionsPage = 0;
@@ -580,7 +751,7 @@ async function loadDetections(reset = true) {
   }
 
   const camFilter = document.getElementById('filterCamera').value;
-  const dateVal = document.getElementById('filterDate').value || todayStr();
+  const dateVal = document.getElementById('filterDateInline').value || todayStr();
 
   let url = `${API.detections}?date_from=${dateVal}&limit=${DETECTIONS_PAGE_SIZE}&offset=${detectionsPage * DETECTIONS_PAGE_SIZE}`;
   if (camFilter !== 'all') url += `&camera_id=${camFilter}`;
@@ -614,9 +785,14 @@ async function loadMoreDetections() {
   document.getElementById('loadMoreBtn').style.display = 'inline-block';
   document.getElementById('loadMoreSpinner').style.display = 'none';
 }
-function buildDetectionsFilterState() {
+
+function filterDetections() {
   const { camera, cls, activeDates } = getFilters();
-  return { camera, cls, activeDates };
+  filteredDetections = applyAllFilters(allDetections, camera, cls, activeDates);
+  renderDetections(filteredDetections);
+  renderSummaryBar(filteredDetections);
+  renderDatePills(allDetections);
+  renderClassPills(allDetections);
 }
 
 function applyAllFilters(items, camera, cls, activeDates) {
@@ -636,15 +812,6 @@ function applyAllFilters(items, camera, cls, activeDates) {
   return items;
 }
 
-function filterDetections() {
-  const { camera, cls, activeDates } = getFilters();
-  filteredDetections = applyAllFilters(allDetections, camera, cls, activeDates);
-  renderDetections(filteredDetections);
-  renderSummaryBar(filteredDetections);
-  renderDatePills(allDetections);
-  renderClassPills(allDetections);
-}
-
 /* ─── Render Summary Bar ─── */
 function renderSummaryBar(items) {
   const clsCounts = {};
@@ -659,18 +826,18 @@ function renderSummaryBar(items) {
   const container = document.getElementById('summaryBar');
   container.innerHTML = `
     <div class="summary-chip">
-      <span class="val">${filteredDetections.length}</span> snapshots with detections
+      <span class="val">${filteredDetections.length}</span> snapshots
     </div>
     <div class="summary-chip">
-      <span class="val">${total}</span> total objects
+      <span class="val">${total}</span> objects
     </div>
-    ${entries.slice(0, 8).map(([cls, n]) =>
+    ${entries.slice(0, 6).map(([cls, n]) =>
       `<div class="summary-chip">
         <span class="dot" style="background:${clsColor(cls)}"></span>
         ${cls} <span class="val">${n}</span>
       </div>`
     ).join('')}
-    ${entries.length > 8 ? `<div class="summary-chip">+${entries.length - 8} more</div>` : ''}
+    ${entries.length > 6 ? `<div class="summary-chip">+${entries.length - 6} more</div>` : ''}
   `;
 }
 
@@ -715,7 +882,6 @@ function renderClassPills(items) {
   }
   sel.value = curVal;
 
-  // Render pills
   const entries = Object.entries(clsCounts).sort((a, b) => b[1] - a[1]);
   const container = document.getElementById('classPills');
   container.innerHTML = entries.map(([cls, n]) =>
@@ -728,7 +894,7 @@ function renderClassPills(items) {
 function filterByClass(cls) {
   const sel = document.getElementById('filterClass');
   sel.value = cls === sel.value ? 'all' : cls;
-  filterDetections();
+  rebuildDetections();
 }
 
 /* ─── Render Detections Grid ─── */
@@ -740,11 +906,11 @@ function renderDetections(items) {
     return;
   }
 
-  let html = '<div class="detection-grid">';
-  // Sort by most recent first
   items.sort((a, b) => new Date(b.snap.captured_at) - new Date(a.snap.captured_at));
 
-  for (const d of items) {
+  let html = '<div class="detection-grid">';
+  for (let i = 0; i < items.length; i++) {
+    const d = items[i];
     const objs = parseDetections(d.analysis);
     const tags = objs.map(o =>
       `<span class="detection-tag ${tagClass(o.class_name)}">
@@ -759,7 +925,7 @@ function renderDetections(items) {
     html += `
       <div class="detection-card">
         <img class="thumb" src="/snapshots/${d.snap.image_path}" alt=""
-             onclick="openLightbox('/snapshots/${d.snap.image_path}')"
+             onclick="openDetectionLightbox(${i})"
              onerror="this.style.display='none'">
         <div class="meta">
           <span class="cam">${d.camName} ${flagged}</span>
@@ -780,8 +946,6 @@ function parseDetections(analysis) {
 }
 
 /* ─── Unified Filtering ─── */
-
-// Get current filter state across all controls
 function getFilters() {
   return {
     camera: document.getElementById('filterCamera').value,
@@ -791,29 +955,24 @@ function getFilters() {
   };
 }
 
-// Called when camera dropdown changes
 function onCameraChange() {
   if (activeTab === 'reviews') filterReviews();
   else rebuildDetections();
 }
 
-// Called when reason dropdown changes
 function onReasonChange() {
   filterReviews();
 }
 
-// Called when class dropdown changes
 function onClassChange() {
   rebuildDetections();
 }
 
-// Called when date input changes
 function onDateChange() {
   loadDetections(true);
 }
 
 /* ─── Review Filters ─── */
-
 function filterReviews() {
   const { camera, reason } = getFilters();
   filteredReviews = allReviews.filter(r => {
@@ -840,49 +999,29 @@ function updateStats(items) {
 }
 
 /* ─── Detection Filters ─── */
-
-// Full rebuild respecting all current filter state
 function rebuildDetections() {
   const { camera, cls, activeDates } = getFilters();
-
   let items = allDetections;
-
-  // Camera filter
-  if (camera !== 'all') {
-    items = items.filter(d => d.camera_id === parseInt(camera));
-  }
-
-  // Class filter
+  if (camera !== 'all') items = items.filter(d => d.camera_id === parseInt(camera));
   if (cls !== 'all') {
     items = items.filter(d => {
       const objs = parseDetections(d.analysis);
       return objs.some(o => o.class_name === cls);
     });
   }
-
-  // Date filter
   if (activeDates.length > 0) {
     items = items.filter(d => {
       const dt = d.snap.captured_at ? d.snap.captured_at.split('T')[0] : '';
       return activeDates.includes(dt);
     });
   }
-
   filteredDetections = items;
   renderDetections(filteredDetections);
   renderSummaryBar(filteredDetections);
 }
 
-// Toggle date pill and re-filter
 function toggleDatePill(el) {
   el.classList.toggle('active');
-  rebuildDetections();
-}
-
-// Click class pill
-function filterByClass(cls) {
-  const sel = document.getElementById('filterClass');
-  sel.value = cls === sel.value ? 'all' : cls;
   rebuildDetections();
 }
 
@@ -894,7 +1033,8 @@ function renderReviews(items) {
     return;
   }
   let html = '<div class="select-all-wrap"><input type="checkbox" class="bulk-checkbox" id="selectAll" onchange="toggleSelectAll(this)"><label for="selectAll">Select All</label></div><div class="review-list">';
-  for (const r of items) {
+  for (let i = 0; i < items.length; i++) {
+    const r = items[i];
     const detections = parseDetections(r);
     const tags = detections.map(d =>
       `<span class="detection-tag ${tagClass(d.class_name)}">
@@ -903,25 +1043,26 @@ function renderReviews(items) {
     ).join('');
     const reasonCls = reasonClass(r.review_reason);
     const rsn = reasonLabel(r.review_reason);
-    const idx = items.indexOf(r);
     html += `
       <div class="review-card" id="card-${r.analysis_id}">
-        <input type="checkbox" class="bulk-checkbox" id="cb-${r.analysis_id}"
-               onchange="updateBulkBar()" value="${r.analysis_id}">
-        <img class="review-thumb" src="/snapshots/${r.image_path}" alt=""
-             onclick="openLightbox('/snapshots/${r.image_path}')"
-             onerror="this.style.display='none'">
-        <div class="review-info">
-          <div class="review-camera">${r.camera_name || 'Camera ' + r.camera_id}</div>
-          <div class="review-time">${fmtTime(r.captured_at)}</div>
-          <div><span class="reason-badge ${reasonCls}">${rsn}</span></div>
-          <div class="detection-tags">${tags || '<span style="font-size:0.6rem;color:var(--text-dim)">No objects</span>'}</div>
-          ${r.person_count > 0 ? `<div style="font-size:0.6rem;color:var(--amber)">${r.person_count} person(s)</div>` : ''}
+        <div class="review-card-top">
+          <input type="checkbox" class="bulk-checkbox" id="cb-${r.analysis_id}"
+                 onchange="updateBulkBar()" value="${r.analysis_id}" style="align-self:center">
+          <img class="review-thumb" src="/snapshots/${r.image_path}" alt=""
+               onclick="openReviewLightbox(${i})"
+               onerror="this.style.display='none'">
+          <div class="review-info">
+            <div class="review-camera">${r.camera_name || 'Camera ' + r.camera_id}</div>
+            <div class="review-time">${fmtTime(r.captured_at)}</div>
+            <div><span class="reason-badge ${reasonCls}">${rsn}</span></div>
+            <div class="detection-tags">${tags || '<span style="font-size:0.55rem;color:var(--text-dim)">No objects</span>'}</div>
+            ${r.person_count > 0 ? `<div style="font-size:0.55rem;color:var(--amber)">${r.person_count} person(s)</div>` : ''}
+          </div>
         </div>
         <div class="review-actions">
-          <button class="btn-review btn-approve" onclick="markReviewed(${r.analysis_id}, false)">✓ App</button>
+          <button class="btn-review btn-approve" onclick="markReviewed(${r.analysis_id}, false)">✓ Approve</button>
           <button class="btn-review btn-dismiss" onclick="markReviewed(${r.analysis_id}, false, 'false_positive')">✕ Dismiss</button>
-          <button class="btn-review btn-view" onclick="openLightbox('/snapshots/${r.image_path}')">🔍 View</button>
+          <button class="btn-review btn-view" onclick="openReviewLightbox(${i})">🔍 View</button>
         </div>
       </div>`;
   }
@@ -957,7 +1098,7 @@ async function markReviewed(analysisId, reviewRequired, reason) {
 /* ─── Stats ─── */
 async function loadStats() {
   try {
-    const dateVal = document.getElementById('filterDate').value || todayStr();
+    const dateVal = document.getElementById('filterDateInline').value || todayStr();
     const statsUrl = `${API.detections}?date_from=${dateVal}&limit=500`;
     const res = await fetch(statsUrl);
     const items = await res.json();
@@ -1004,53 +1145,100 @@ async function loadCameras() {
   } catch (_) {}
 }
 
-/* ─── Lightbox ─── */
-let reviewLBItems = [];
-let reviewLBIndex = 0;
+/* ─── Lightbox with navigation ─── */
+let lbItems = [];
+let lbIndex = 0;
+let lbTouchStartX = 0;
+let lbTouchStartY = 0;
+let lbTouchDeltaX = 0;
+let lbSwiping = false;
 
-function openLightbox(src, items, index) {
-  reviewLBItems = items || [];
-  reviewLBIndex = index || 0;
-  const img = document.getElementById('lightboxImg');
-  img.src = src;
-  document.getElementById('lightbox').classList.add('open');
-  updateLBButtons();
-  updateLBInfo();
+function openReviewLightbox(index) {
+  lbItems = filteredReviews.map(r => ({
+    image_path: r.image_path,
+    label: `${r.camera_name || 'Camera ' + r.camera_id} — ${fmtTime(r.captured_at)}`,
+  }));
+  lbIndex = index;
+  showLightbox();
 }
+
+function openDetectionLightbox(index) {
+  lbItems = filteredDetections.map(d => ({
+    image_path: d.snap.image_path,
+    label: `${d.camName} — ${fmtTimeShort(d.snap.captured_at)}`,
+  }));
+  lbIndex = index;
+  showLightbox();
+}
+
+function showLightbox() {
+  const lb = document.getElementById('lightbox');
+  lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  updateLightboxImage();
+}
+
+function updateLightboxImage() {
+  if (lbItems.length === 0) return;
+  const item = lbItems[lbIndex];
+  document.getElementById('lightboxImg').src = `/snapshots/${item.image_path}`;
+  document.getElementById('lbMeta').textContent = item.label || '';
+  const hasItems = lbItems.length > 1;
+  document.getElementById('lbInfo').textContent = hasItems ? `${lbIndex + 1} / ${lbItems.length}` : '';
+  document.getElementById('lbPrev').style.display = (hasItems && lbIndex > 0) ? '' : 'none';
+  document.getElementById('lbNext').style.display = (hasItems && lbIndex < lbItems.length - 1) ? '' : 'none';
+}
+
 function closeLightbox() {
   document.getElementById('lightbox').classList.remove('open');
-  reviewLBItems = [];
+  document.body.style.overflow = '';
+  lbItems = [];
+  lbIndex = 0;
 }
-function updateLBButtons() {
-  const hasPrev = reviewLBItems.length > 0 && reviewLBIndex > 0;
-  const hasNext = reviewLBItems.length > 0 && reviewLBIndex < reviewLBItems.length - 1;
-  document.getElementById('lbPrev').style.display = hasPrev ? '' : 'none';
-  document.getElementById('lbNext').style.display = hasNext ? '' : 'none';
-}
-function updateLBInfo() {
-  const el = document.getElementById('lbInfo');
-  if (reviewLBItems.length > 1) {
-    el.textContent = `${reviewLBIndex + 1} / ${reviewLBItems.length}`;
-  } else {
-    el.textContent = '';
-  }
-}
+
 function lbPrev() {
-  if (reviewLBIndex <= 0) return;
-  reviewLBIndex--;
-  const item = reviewLBItems[reviewLBIndex];
-  document.getElementById('lightboxImg').src = `/snapshots/${item.image_path}`;
-  updateLBButtons();
-  updateLBInfo();
+  if (lbIndex <= 0) return;
+  lbIndex--;
+  updateLightboxImage();
 }
+
 function lbNext() {
-  if (reviewLBIndex >= reviewLBItems.length - 1) return;
-  reviewLBIndex++;
-  const item = reviewLBItems[reviewLBIndex];
-  document.getElementById('lightboxImg').src = `/snapshots/${item.image_path}`;
-  updateLBButtons();
-  updateLBInfo();
+  if (lbIndex >= lbItems.length - 1) return;
+  lbIndex++;
+  updateLightboxImage();
 }
+
+/* ─── Lightbox touch/swipe ─── */
+const lbWrap = document.getElementById('lbImgWrap');
+
+lbWrap.addEventListener('touchstart', (e) => {
+  lbTouchStartX = e.touches[0].clientX;
+  lbTouchStartY = e.touches[0].clientY;
+  lbTouchDeltaX = 0;
+  lbSwiping = false;
+}, { passive: true });
+
+lbWrap.addEventListener('touchmove', (e) => {
+  const dx = e.touches[0].clientX - lbTouchStartX;
+  const dy = e.touches[0].clientY - lbTouchStartY;
+  lbTouchDeltaX = dx;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+    lbSwiping = true;
+  }
+}, { passive: true });
+
+lbWrap.addEventListener('touchend', () => {
+  if (lbSwiping && Math.abs(lbTouchDeltaX) > 50) {
+    if (lbTouchDeltaX > 0) lbPrev();
+    else lbNext();
+  }
+  lbSwiping = false;
+  lbTouchDeltaX = 0;
+}, { passive: true });
+
+document.getElementById('lightbox').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('lightbox')) closeLightbox();
+});
 
 /* ─── Toast ─── */
 function showToast(msg, type = 'success') {
@@ -1072,7 +1260,6 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ─── Bulk Selection ─── */
-
 function toggleSelectAll(el) {
   const cbs = document.querySelectorAll('#reviewList .bulk-checkbox:not(#selectAll)');
   cbs.forEach(cb => cb.checked = el.checked);
@@ -1132,8 +1319,8 @@ function loadAll() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('filterDateInline').value = todayStr();
   loadCameras();
-  document.getElementById('filterDate').value = todayStr();
   loadAll();
   setInterval(() => loadReviews(), 15000);
   setInterval(() => loadStats(), 60000);
