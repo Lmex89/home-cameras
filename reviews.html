@@ -200,7 +200,11 @@ a:hover { color: var(--amber); }
 .inline-date-row input[type="date"]:focus { border-color: var(--amber); }
 
 /* ─── Bulk Selection ─── */
-.bulk-checkbox { accent-color: var(--amber); cursor: pointer; width: 18px; height: 18px; flex-shrink: 0; }
+.bulk-checkbox {
+  accent-color: var(--amber); cursor: pointer; width: 20px; height: 20px;
+  flex-shrink: 0; -webkit-appearance: auto; appearance: auto;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 3px;
+}
 .select-all-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .select-all-wrap label { font-size: 0.65rem; color: var(--text-dim); cursor: pointer; }
 
