@@ -123,7 +123,7 @@ a:hover { color: var(--amber); }
 .sidebar {
   background: var(--surface); border-bottom: 1px solid var(--border);
   overflow-y: auto; max-height: 0; transition: max-height 0.3s ease, padding 0.3s ease;
-  padding: 0 16px;
+  padding: 0 16px; position: relative; z-index: 201;
 }
 .sidebar.open { max-height: 70vh; padding: 16px; }
 .sidebar h3 { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
