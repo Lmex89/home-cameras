@@ -1,0 +1,60 @@
+.camera-card {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.camera-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.snapshot-thumb {
+    max-height: 240px;
+    width: 100%;
+    object-fit: cover;
+    cursor: pointer;
+}
+.no-snapshot i {
+    display: block;
+}
+.timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.75rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--bs-border-color);
+}
+.timeline-item {
+    position: relative;
+    margin-bottom: 1rem;
+}
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -1.6rem;
+    top: 0.5rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--bs-primary);
+}
+.timeline-item .card {
+    margin-bottom: 0;
+}
+.snapshot-thumb-sm {
+    height: 80px;
+    width: 120px;
+    object-fit: cover;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: opacity 0.15s;
+}
+.snapshot-thumb-sm:hover {
+    opacity: 0.8;
+}
+#reportContent .card {
+    border-left: 3px solid var(--bs-primary);
+}

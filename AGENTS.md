@@ -1,16 +1,33 @@
 # Cameras — ONVIF snapshot monitor
 
+Dual-implementation repo: the legacy **Python/FastAPI** app lives in `app/`,
+and the **Go port** (feature-parity, same DB schema, single binary) lives in
+`cmd/` + `internal/`. See `GO_MIGRATION.md` for the file-by-file mapping and
+Python→Go cheat sheet. When a feature or bug touches business logic, apply the
+change to **both** implementations unless told otherwise.
+
 ## 🔴 ABSOLUTE: Codegraph-only lookup
 
 You MUST use codegraph_* tools (codegraph_find_symbol, codegraph_context_for_task, etc.) for ALL code search and navigation.
 
 **NEVER use `glob`, `grep`, or `read` for code lookup.** Codegraph tools are the ONLY permitted approach. Built-in tools are ONLY permitted when a codegraph tool returns no useful results, as a strictly last resort.
 
+**Re-index after Go changes:** the Go index lags writes; run `codegraph index .` after restructuring packages.
+
 ## Quick start
 
 ```bash
-uvicorn app.main:app --reload --port 8004  # dev server
-docker compose up --build                  # containerized
+# ── Go port (preferred) ─────────────────────────────────────────────
+make run        # dev server on :8004, data dir ./data
+make build      # compile bin/cameras-go
+make test       # go test ./... -race -cover
+make vet        # go vet ./...
+make opencv     # build with native YOLO via gocv (-tags opencv)
+make docker     # docker build -t cameras-go .
+
+# ── Legacy Python app ───────────────────────────────────────────────
+uvicorn app.main:app --reload --port 8004
+docker compose up --build
 ```
 
 ## Service management
@@ -48,64 +65,71 @@ sudo fish manage-service.fish uninstall
 
 ## Architecture
 
+### Go port (`cmd/` + `internal/`) — the current implementation
+
+```
+cmd/server/main.go            # wiring: config → DB → services → scheduler → HTTP
+internal/
+├── config/config.go          # caarlos0/env + .env loader (env names unchanged)
+├── database/database.go      # sqlx + pure-Go SQLite (WAL PRAGMAs), //go:embed schema.sql, legacy migrations
+├── domain/
+│   ├── models.go             # entities + SQLTime (SQLite text ↔ time, isoformat JSON)
+│   └── schemas.go            # request/response DTOs, Day (accepts "YYYY-MM-DD")
+├── repository/               # 4 repos over DBTX (*sqlx.DB or *sqlx.Tx)
+├── service/                  # camera, snapshot, analysis, retention, timelapse
+├── infrastructure/
+│   ├── onvif/onvif.go        # use-go/onvif adapter (namespace-agnostic XML parsing)
+│   ├── ml/                   # Detector interface; stub.go default; engine_opencv.go behind -tags opencv
+│   ├── telegram/notifier.go  # 50 MB cap + S3 fallback
+│   ├── storage/s3.go         # minio-go
+│   └── archive/archive.go    # ZIP reference "zip::filename" reader
+├── api/                      # chi router + handlers (validation lives here)
+├── scheduler/                # per-camera timers (restart-anchored) + robfig/cron jobs
+├── seed/seed.go              # YAML → DB idempotent sync
+└── web/static/               # embedded SPA (index.html, reviews.html, app.js, app.css)
+```
+
+DDD-lite, same as Python: handlers → services (contain logic) → repositories
+(data access). No UnitOfWork: services open `*sqlx.Tx` and pass it to repos.
+Docs use Google-style sections (`Args:`, `Returns:`, `Raises:`) so Python
+developers can migrate between the two trees.
+
+### Legacy Python app (`app/`) — frozen
+
 ```
 app/
 ├── main.py              # FastAPI app + lifespan (init DB, seed, scheduler)
 ├── core/                # config, database engine, UnitOfWork
 ├── domain/              # SQLAlchemy models, Pydantic schemas
 ├── application/         # services, repositories
-│   ├── services/
-│   │   ├── snapshot_service.py  # capture + reporting
-│   │   ├── camera_service.py    # camera CRUD
-│   │   ├── analysis_service.py  # ML analysis orchestrator
-│   │   └── retention_service.py # archive cleanup
-│   └── repositories/
-│       ├── camera.py
-│       ├── snapshot.py
-│       ├── analysis_job.py
-│       └── snapshot_analysis.py
-├── infrastructure/
-│   ├── onvif.py          # ONVIFCameraClient
-│   ├── archive.py        # ZIP snapshot retriever
-│   ├── storage.py        # StorageProvider (Backblaze B2 / S3)
-│   ├── telegram.py       # TelegramNotifier (video reports)
-│   └── ml/
-│       ├── __init__.py
-│       └── yolo.py        # YOLODetector adapter
-├── api/                  # FastAPI routers + dependency injection
-│   └── routers/
-│       ├── cameras.py
-│       ├── snapshots.py
-│       ├── report.py
-│       ├── videos.py
-│       └── reviews.py     # review management endpoints
-├── web/                  # Jinja2 pages + static assets
-├── sql/schema.sql        # raw DDL run on startup
-├── scheduler.py          # APScheduler (capture + analysis + retention)
-└── seed.py               # YAML → DB seeder
+├── infrastructure/      # onvif, archive, storage, telegram, ml/yolo
+├── api/routers/         # cameras, snapshots, report, videos, reviews
+├── web/                 # Jinja2 pages + static assets
+├── sql/schema.sql       # raw DDL run on startup
+├── scheduler.py         # APScheduler
+└── seed.py              # YAML → DB seeder
 ```
 
-DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWork` wraps an async SQLAlchemy session and exposes `.cameras`, `.snapshots`, `.analysis_jobs`, and `.snapshot_analyses` repos.
-
-## Key flows
+## Key flows (both implementations)
 
 | Step | What happens |
 |---|---|
-| Startup | `lifespan` → init DB from `sql/schema.sql` → seed from `cameras.yaml` → start APScheduler |
-| Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
-| Analysis  | After each successful capture, `AnalysisService.analyze_snapshot()` enqueues an `analysis_job`. A separate scheduler poll (every 30s) processes pending jobs via `process_next_batch()`. |
-| Review    | `AnalysisService._apply_review_rules()` flags snapshots for human review (person after hours, high count, unexpected objects). Review items surface in the manifest and `/api/reviews/pending` endpoint. |
-| Retention | Daily 06:00 cron (`schedule_retention`) → `RetentionService.run()`: zips raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` into `data/archives/`, then deletes records/archives past `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS`. Also triggerable on demand via `POST /api/retention/run`. |
-| Purge     | Manual destructive cleanup via `POST /api/retention/purge` or `fish run-purge.fish`. Deletes raw snapshots, analyses, jobs, videos, and archives older than `days` **without** creating archives. |
-| Timelapse | Daily 21:00 cron (`schedule_timelapse`) generates an annotated MP4 for the configured camera using YOLO detections; manual runs via `fish run-timelapse.fish`. Videos are uploaded to Backblaze B2 and notified via Telegram. |
-| Telegram  | After each timelapse video is saved (scheduled job or manual ``POST /api/videos/annotated``), ``TelegramNotifier.send_video()`` sends the MP4 directly to the configured Telegram chat. Fallback to text+URL if the video exceeds 50 MB. |
-| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db`, `snapshots/` (raw), `videos/` (raw), `archives/` (zipped), `models/`, and `logs/`. |
+| Startup | init DB from `sql/schema.sql` + legacy migrations → seed from `cameras.yaml` → start scheduler (Go: `scheduler.New` + `sched.Start()`) |
+| Snapshots | Per-camera interval job → capture tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HMSS.jpg` |
+| Analysis  | After each successful capture an `analysis_job` is enqueued; a poller (every 30s) processes pending jobs (Go: `AnalysisService.ProcessNextBatch`). Detector is a singleton; stub mode when the model is missing. |
+| Review    | `applyReviewRules` flags snapshots (person after hours, high count, unexpected objects). Surfaces in `/data/manifest.json` and `/api/reviews/pending`. |
+| Retention | Daily 06:00 cron → zips raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` into `data/archives/`, deletes records/archives past `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS`. Pauses capture/analysis jobs while running. Also `POST /api/retention/run`. |
+| Purge     | Destructive `POST /api/retention/purge` or `fish run-purge.fish`: deletes snapshots, analyses, jobs, videos, archives older than `days` **without** creating archives. |
+| Timelapse | Daily cron at `TIMELAPSE_HOUR` generates the annotated MP4 (ffmpeg concat + faststart); uploaded to S3-compatible storage and sent via Telegram. |
+| Telegram  | After a timelapse is saved, the MP4 is sent to the configured chat; text+URL fallback above 50 MB. Alarms on scheduled-job panic/failure. |
+| Data dirs | `data/` is gitignored, mounted as Docker volume: `cameras.db`, `snapshots/`, `videos/`, `archives/`, `models/`, `logs/`. |
 
 ## Config
 
-Env vars (via `pydantic-settings`, reads `.env`):
+Env vars are identical for both implementations (`.env` at the working
+directory; Go: `config.Load()` via caarlos0/env, Python: `pydantic-settings`):
 
-- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `TIMEZONE`, `SNAPSHOT_RETENTION_DAYS`, `SNAPSHOT_ZIP_AFTER_DAYS`, `VIDEO_RETENTION_DAYS`, `DEFAULT_INTERVAL_SECONDS`
+- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `TIMEZONE`, `SNAPSHOT_RETENTION_DAYS`, `SNAPSHOT_ZIP_AFTER_DAYS`, `VIDEO_RETENTION_DAYS`, `DEFAULT_INTERVAL_SECONDS`, `CAPTURE_TIMEOUT_SECONDS`, `HEALTH_CHECK_INTERVAL_MINUTES`
 - `ANALYSIS_ENABLED`, `ANALYSIS_INTERVAL_SECONDS`, `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`
 - `REVIEW_PERSON_AFTER_HOUR`, `REVIEW_PERSON_BEFORE_HOUR`, `REVIEW_MAX_PERSON_COUNT`
 - `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
@@ -114,18 +138,14 @@ Env vars (via `pydantic-settings`, reads `.env`):
 
 ## Docker
 
-Multi-stage Alpine build. Includes `ffmpeg` for RTSP snapshot fallback. `docker-compose.yml` mounts `data/` and `cameras.yaml`. App user is `appuser` (UID not fixed).
-
-For GPU-accelerated ML inference, a separate worker image based on `nvidia/cuda` is planned.
+- **Python**: multi-stage Alpine build, includes `ffmpeg`; `docker-compose.yml` mounts `data/` and `cameras.yaml`.
+- **Go**: `Dockerfile` multi-stage (`FROM scratch` default, `--build-arg BASE=opencv` for an alpine image with ffmpeg).
 
 ## Dependencies
 
-- FastAPI, uvicorn, SQLAlchemy (async), aiosqlite, Jinja2
-- onvif-python, httpx (for snapshot fetch)
-- APScheduler (async), PyYAML, pydantic-settings
-- ffmpeg (RTSP frame grab fallback)
-- python-telegram-bot (Telegram video report notifications)
-- ultralytics (YOLO inference, graceful stub mode when missing)
+- **Go**: chi/v5, sqlx, modernc.org/sqlite (pure Go, no CGO), caarlos0/env, zerolog, robfig/cron/v3, use-go/onvif, go-telegram-bot-api (via raw HTTP in the notifier), minio-go, fogleman/gg + golang.org/x/image (frame annotation), gopkg.in/yaml.v3, gocv (optional, `-tags opencv`)
+- **Python**: FastAPI, uvicorn, SQLAlchemy (async), aiosqlite, Jinja2, onvif-python, httpx, APScheduler, PyYAML, pydantic-settings, python-telegram-bot, boto3, ultralytics (stub mode when missing)
+- Both: ffmpeg (RTSP frame grab + timelapse assembly)
 
 ## Codegraph (code context engine)
 
@@ -162,11 +182,11 @@ codegraph stats .                     # Graph statistics
 
 Every contribution MUST follow SOLID:
 
-- **Single Responsibility**: One class/service = one reason to change. `CameraService` handles camera CRUD, `SnapshotService` handles capture/reporting, `ONVIFCameraClient` handles ONVIF wire protocol. Do not blur concerns.
-- **Open/Closed**: Extend via new classes, not modification of existing stable ones. New camera vendor? Add a new infrastructure adapter, do not touch existing services.
-- **Liskov Substitution**: Subtypes must be replaceable for their base. Keep repository interfaces consistent — all repos follow the same `add/get_by_id/get_all` pattern.
-- **Interface Segregation**: Keep abstractions narrow. `CameraRepository` exposes only what callers need, not kitchen-sink interfaces.
-- **Dependency Inversion**: Depend on abstractions (protocols / ABCs / type stubs), not concretions. Services receive `UnitOfWork` and `ONVIFCameraClient` via constructor injection.
+- **Single Responsibility**: One type/package = one reason to change. `CameraService` handles camera CRUD, `SnapshotService` handles capture/reporting, `onvif.Client` handles the wire protocol. Do not blur concerns.
+- **Open/Closed**: Extend via new types, not modification of existing stable ones. New camera vendor? Add a new infrastructure adapter. New ML backend? New `ml.Detector` implementation.
+- **Liskov Substitution**: Subtypes must be replaceable for their base. Keep repository signatures consistent — all repos follow the same `Add/GetByID/GetAll` pattern over `DBTX`.
+- **Interface Segregation**: Keep abstractions narrow. `DBTX` exposes only what repositories need; `ml.Detector` only `Available()` + `Detect()`.
+- **Dependency Inversion**: Depend on abstractions, not concretions. Services receive repositories, `*sqlx.DB`, and adapters via constructor injection (`NewXService(...)`), never globals.
 
 ## Mandatory: Conventional commits
 
@@ -184,9 +204,25 @@ Allowed types: `feat`, `fix`, `build`, `chore`, `ci`, `docs`, `style`, `refactor
 Breaking changes: append `!` after type/scope OR add `BREAKING CHANGE:` footer.
 Body explains *why* (not what). Footer references issues or breaking changes.
 
-## Mandatory: Loguru logging
+## Mandatory: Structured logging
 
-Every log MUST use `loguru` with the correct severity level. The project uses `from loguru import logger` — no `print()`, no `logging` stdlib.
+### Go (zerolog)
+
+Every log MUST use `github.com/rs/zerolog/log` — never `fmt.Println`, never stdlib `log`.
+
+| Level | When to use |
+|---|---|
+| `log.Debug()` | Development-only details: ONVIF URIs, profile tokens, request logs |
+| `log.Info()` | Routine operations: snapshot saved, camera scheduled, seed completed |
+| `log.Warn()` | Recoverable issues: camera unreachable on one attempt, detector in stub mode |
+| `log.Error()` | Operation failures: all capture methods failed, DB init error, job panicked (recovered) |
+| `log.Error().Err(err)` | Inside failure paths — attach the error with `.Err(err)` instead of stringifying it |
+
+Use chained fields (never `fmt.Sprintf` into the message): `log.Info().Int64("camera_id", id).Str("status", "ok").Msg("snapshot capture")`.
+
+### Python (loguru)
+
+Every log MUST use `from loguru import logger` — no `print()`, no `logging` stdlib.
 
 | Level | When to use |
 |---|---|
@@ -194,27 +230,32 @@ Every log MUST use `loguru` with the correct severity level. The project uses `f
 | `logger.info(...)` | Routine operations: snapshot saved, camera scheduled, seed completed |
 | `logger.warning(...)` | Recoverable issues: camera unreachable on one attempt, YAML parse fallback, deprecated config |
 | `logger.error(...)` | Operation failures: snapshot capture failed, DB init error, ONVIF connection timeout |
-| `logger.exception(...)` | Inside `except` blocks only — logs the full traceback automatically. Never use `logger.error` in an except handler if you want the traceback. |
+| `logger.exception(...)` | Inside `except` blocks only — logs the full traceback automatically |
 
-Use f-string formatting (not `{}` positional args): `logger.info(f"Camera {cam_id} snapshot saved")`.
+Use f-string formatting: `logger.info(f"Camera {cam_id} snapshot saved")`.
 
-## Mandatory: Pydantic validation & serialization
+## Mandatory: Validation & serialization
 
-Every endpoint MUST use pydantic schemas for both input validation and output serialization:
+### Go
 
-- **Input**: Use `StringConstraints` (`min_length`, `strip_whitespace`) and `Field` bounds (`ge`, `le`) on create/update schemas. Never trust raw request params without type constraints.
-- **Output**: Always call `Schema.model_validate(orm_obj)` before returning ORM data. Never return raw ORM instances — FastAPI `response_model` alone is not sufficient for explicit validation.
-- **Serialization**: Use `.model_dump()` / `.model_dump(exclude_unset=True)` when converting schemas to dicts for service layers.
-- **Config**: Always use `ConfigDict(from_attributes=True)` on read schemas, never bare dicts.
+- **Input**: DTO structs in `internal/domain/schemas.go` (`json` tags). Manual validation in the handlers (`internal/api/*.go`): required strings, `port` 1–65535, `interval_seconds >= 10`, pagination caps, `Day` for dates. Never trust raw query/path params.
+- **Output**: Always serialize domain structs (they carry `json` tags). Never return raw `*sql.Rows` or maps of untyped data from handlers.
+- **Timestamps**: Use `domain.SQLTime` (SQLite `YYYY-MM-DD HH:MM:SS` ↔ `time.Time`, emits ISO-8601 in JSON) and `domain.NullSQLTime` for nullable columns.
 
-## Mandatory: Google-style docstrings
+### Python
 
-Every module, class, function, and method MUST have a Google-style docstring. FastAPI path operations use the docstring as the OpenAPI description (supports Markdown).
+- **Input**: Use `StringConstraints` (`min_length`, `strip_whitespace`) and `Field` bounds (`ge`, `le`) on create/update schemas.
+- **Output**: Always call `Schema.model_validate(orm_obj)` before returning ORM data.
+- **Config**: Always use `ConfigDict(from_attributes=True)` on read schemas.
+
+## Mandatory: Google-style docstrings / doc comments
+
+Every exported symbol in Go and every module, class, function, and method in Python MUST be documented. Use the Google-style format in both languages so the two trees stay consistent.
 
 ### Format
 
 ```
-"""Single-line summary (max 80 chars, ends with period).
+Single-line summary (max 80 chars, ends with period).
 
 Optionally leave a blank line, then longer description. Sections are
 separated by blank lines.
@@ -224,51 +265,18 @@ separated by blank lines.
 
 | Context | Required sections |
 |---|---|
-| **Module** | Summary describing purpose and contents |
-| **Class** | Summary + description of responsibility |
+| **Package / Module** | Summary describing purpose and contents |
+| **Type / Class** | Summary + description of responsibility |
 | **Function / Method** | Summary, `Args:` (if any params), `Returns:` (if not None), `Raises:` (if any) |
-| **FastAPI route** | Summary + Markdown body (used as OpenAPI `description`). Use `\f` to truncate for OpenAPI if the docstring is long. |
+| **HTTP handler / route** | Summary + note of the HTTP method + path |
 | **Property** | Summary only (unless complex) |
-| **`__init__`** | Document in the class docstring instead, or use `Args:` on `__init__` |
 
 ### Rules
 
-1. **Always `"""` triple double-quotes** — never `'''` or `#` comments for docstrings.
+1. **Go**: comment must start with the symbol name (`// Capture runs the three-tier...`) — this is how `gofmt`/`godoc` associate it. Python: `"""` triple double-quotes only.
 2. **Summary on first line** — imperative mood ("Get the user", not "Gets the user").
-3. **`Args:`** — one line per parameter: `param_name: Description.` Include type only if non-obvious.
-4. **`Returns:`** — describe the return value and its type: `The snapshot file path.` Omit if `-> None`.
-5. **`Raises:`** — one line per exception: `ValueError: Description of when it occurs.`
-6. **Types in docstrings** — do NOT duplicate type annotations. The type hints serve that purpose. Docstrings describe *meaning and behavior*.
-7. **No docstring is worse than a bad one** — if a function is trivial (`@property` returning `self._x`), a one-line summary is acceptable.
-
-### Examples
-
-```python
-async def get_daily_report(self, target_date: date) -> dict:
-    """Group all snapshots for a date by camera.
-
-    Args:
-        target_date: The date to query (in project timezone).
-
-    Returns:
-        Dict keyed by camera_id with camera name and snapshot list,
-        or empty dict if no snapshots exist.
-    """
-    ...
-```
-
-```python
-@app.post("/items/")
-async def create_item(payload: ItemCreate) -> ItemRead:
-    """Create a new item.
-
-    Validates the input and persists to the database. Returns the
-    created item with generated fields populated.
-
-    \f
-    **Notes:**
-    - Name must be unique within the project.
-    - Tags are lowercased on creation.
-    """
-    ...
-```
+3. **`Args:`** — one line per parameter: `param_name: Description.` Go uses tab-indented blocks; Python uses 4-space indent.
+4. **`Returns:`** — describe the return value and its type. Omit if `-> None` / no return value.
+5. **`Raises:`** — one line per exception/error: `ValueError: Description of when it occurs.`
+6. **Types in docstrings** — do NOT duplicate type annotations; the type hints/signatures serve that purpose.
+7. **No docstring is worse than a bad one** — a one-line summary is acceptable for trivial helpers.
