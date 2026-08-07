@@ -117,8 +117,9 @@ func (s *AnalysisService) ProcessNextBatch(ctx context.Context, limit int) (int,
 	return processed, nil
 }
 
-// processJob runs a single job in one transaction: mark started, load
-// the snapshot, dispatch by job type, mark completed.
+// processJob runs a single job: compute the analysis OUTSIDE the write
+// transaction (YOLO inference is CPU-bound and can take seconds), then
+// persist job state + analysis atomically in one short transaction.
 //
 // Args:
 //
@@ -129,6 +130,16 @@ func (s *AnalysisService) ProcessNextBatch(ctx context.Context, limit int) (int,
 //
 //	Error on any pipeline failure.
 func (s *AnalysisService) processJob(ctx context.Context, job *domain.AnalysisJob) error {
+	snap, err := s.snaps.GetByID(ctx, job.SnapshotID)
+	if err != nil {
+		return fmt.Errorf("snapshot %d not found", job.SnapshotID)
+	}
+
+	analysis, err := s.runAnalysis(ctx, snap, job)
+	if err != nil {
+		return err
+	}
+
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
@@ -138,22 +149,8 @@ func (s *AnalysisService) processJob(ctx context.Context, job *domain.AnalysisJo
 	if err := s.jobs.MarkStarted(ctx, job.ID); err != nil {
 		return err
 	}
-	snap, err := s.snaps.GetByID(ctx, job.SnapshotID)
-	if err != nil {
-		return fmt.Errorf("snapshot %d not found", job.SnapshotID)
-	}
-
-	switch job.JobType {
-	case "yolo_detection":
-		if _, err := s.runYolo(ctx, snap, job); err != nil {
-			return err
-		}
-	case "anomaly_scoring":
-		if _, err := s.runAnomaly(ctx, snap, job); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown job_type: %s", job.JobType)
+	if err := s.analyses.Add(ctx, analysis); err != nil {
+		return err
 	}
 	if err := s.jobs.MarkCompleted(ctx, job.ID); err != nil {
 		return err
@@ -161,18 +158,48 @@ func (s *AnalysisService) processJob(ctx context.Context, job *domain.AnalysisJo
 	return tx.Commit()
 }
 
-// runYolo runs object detection on a snapshot and persists the result
-// with the review heuristics applied.
+// runAnalysis dispatches a job to its detector without persisting
+// anything. Keeping inference outside the transaction avoids holding the
+// SQLite write lock for its whole duration, which previously blocked
+// readers (manifest, reports) up to busy_timeout.
 //
 // Args:
 //
 //	ctx: Request context.
-//	snap: The snapshot to analyse.
-//	job: The job being processed (for logging).
+//	snap: The snapshot under analysis.
+//	job: The job being processed.
 //
 // Returns:
 //
-//	The persisted SnapshotAnalysis.
+//	The computed SnapshotAnalysis (not yet persisted).
+//
+// Raises:
+//
+//	Error: For an unknown job type.
+func (s *AnalysisService) runAnalysis(ctx context.Context, snap *domain.Snapshot, job *domain.AnalysisJob) (*domain.SnapshotAnalysis, error) {
+	switch job.JobType {
+	case "yolo_detection":
+		return s.runYolo(ctx, snap, job)
+	case "anomaly_scoring":
+		return s.runAnomaly(ctx, snap, job)
+	default:
+		return nil, fmt.Errorf("unknown job_type: %s", job.JobType)
+	}
+}
+
+// runYolo runs object detection on a snapshot and computes the result
+// with the review heuristics applied. It does NOT persist — processJob
+// stores the analysis in its short write transaction.
+//
+// Args:
+//
+//	ctx: Request context.
+//	snap: The snapshot being analyzed.
+//	job: The job being processed.
+//
+// Returns:
+//
+//	The computed SnapshotAnalysis (not yet persisted).
 func (s *AnalysisService) runYolo(ctx context.Context, snap *domain.Snapshot, job *domain.AnalysisJob) (*domain.SnapshotAnalysis, error) {
 	now := time.Now()
 	imagePath := filepath.Join(s.cfg.SnapshotsDir(), snap.ImagePath)
@@ -188,7 +215,7 @@ func (s *AnalysisService) runYolo(ctx context.Context, snap *domain.Snapshot, jo
 			AnalyzedAt:   domain.NullSQLTime{SQLTime: domain.NewSQLTime(now), Valid: true},
 		}
 		log.Warn().Str("path", imagePath).Msg("YOLO skip: image not found")
-		return analysis, s.analyses.Add(ctx, analysis)
+		return analysis, nil
 	}
 
 	detections, err := s.detector.Detect(ctx, imagePath)
@@ -227,9 +254,6 @@ func (s *AnalysisService) runYolo(ctx context.Context, snap *domain.Snapshot, jo
 		ReviewReason:   reviewReason,
 		AnalyzedAt:     domain.NullSQLTime{SQLTime: domain.NewSQLTime(now), Valid: true},
 	}
-	if err := s.analyses.Add(ctx, analysis); err != nil {
-		return nil, err
-	}
 	logInfo := log.Info().Int64("snapshot_id", snap.ID).
 		Int("objects", len(detections)).
 		Int("persons", personCount)
@@ -241,8 +265,9 @@ func (s *AnalysisService) runYolo(ctx context.Context, snap *domain.Snapshot, jo
 	return analysis, nil
 }
 
-// runAnomaly is a stub for a future Anomalib integration; it records a
-// completed analysis without detections.
+// runAnomaly is a stub for a future Anomalib integration; it computes a
+// completed analysis without detections. Persisting happens in
+// processJob's transaction.
 //
 // Args:
 //
@@ -252,7 +277,7 @@ func (s *AnalysisService) runYolo(ctx context.Context, snap *domain.Snapshot, jo
 //
 // Returns:
 //
-//	The persisted (stub) SnapshotAnalysis.
+//	The computed (stub) SnapshotAnalysis.
 func (s *AnalysisService) runAnomaly(ctx context.Context, snap *domain.Snapshot, job *domain.AnalysisJob) (*domain.SnapshotAnalysis, error) {
 	now := time.Now()
 	analysis := &domain.SnapshotAnalysis{
@@ -260,9 +285,6 @@ func (s *AnalysisService) runAnomaly(ctx context.Context, snap *domain.Snapshot,
 		ModelName:  "anomalib",
 		Status:     "completed",
 		AnalyzedAt: domain.NullSQLTime{SQLTime: domain.NewSQLTime(now), Valid: true},
-	}
-	if err := s.analyses.Add(ctx, analysis); err != nil {
-		return nil, err
 	}
 	log.Debug().Int64("snapshot_id", snap.ID).Msg("anomaly analysis stub completed")
 	return analysis, nil

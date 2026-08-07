@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -40,7 +41,17 @@ type SnapshotService struct {
 	cams   *repository.CameraRepository
 	onvif  *onvif.Client
 	client *http.Client
+
+	// Manifest cache: the dashboard SPA polls /api/data/manifest.json
+	// repeatedly; a short TTL avoids hammering the DB (and the lock
+	// contention that made the endpoint take up to busy_timeout).
+	manifestMu    sync.Mutex
+	manifestCache map[string]any
+	manifestAt    time.Time
 }
+
+// manifestTTL is how long a built manifest is served before rebuilding.
+const manifestTTL = 5 * time.Second
 
 // NewSnapshotService builds the snapshot service with injected deps.
 //
@@ -511,6 +522,12 @@ func (s *SnapshotService) GetDailyReport(ctx context.Context, day time.Time) (*d
 //	The manifest map with cameras, per-camera snapshots by date, and
 //	generation timestamp.
 func (s *SnapshotService) BuildManifest(ctx context.Context) (map[string]any, error) {
+	s.manifestMu.Lock()
+	defer s.manifestMu.Unlock()
+	if s.manifestCache != nil && time.Since(s.manifestAt) < manifestTTL {
+		return s.manifestCache, nil
+	}
+
 	cams, err := s.cams.GetEnabled(ctx)
 	if err != nil {
 		return nil, err
@@ -550,11 +567,13 @@ func (s *SnapshotService) BuildManifest(ctx context.Context) (map[string]any, er
 			TotalSnapshots: totalByCam[c.ID],
 		})
 	}
-	return map[string]any{
+	s.manifestCache = map[string]any{
 		"generated_at": time.Now().Format("2006-01-02T15:04:05"),
 		"cameras":      camerasData,
 		"snapshots":    snapshotsByCamDate,
-	}, nil
+	}
+	s.manifestAt = time.Now()
+	return s.manifestCache, nil
 }
 
 // GenerateDailyVideo renders a plain (unannotated) timelapse MP4 from a

@@ -8,6 +8,7 @@
 #   cameras.fish start     check requirements, build and launch in background
 #   cameras.fish stop      stop the running service
 #   cameras.fish restart   stop, then start again
+#   cameras.fish rebuild   stop, rebuild OpenCV + binary from scratch, start
 #   cameras.fish status    show state, PID, memory, uptime, health, detector
 #   cameras.fish logs      follow the service console log (Ctrl-C to exit)
 #   cameras.fish help      show this message
@@ -67,6 +68,7 @@ function _usage
     echo "  start    check requirements, build (gocv engine when OpenCV >= 4.8 is present), launch in background"
     echo "  stop     stop the running service"
     echo "  restart  stop, then start again"
+    echo "  rebuild  stop, rebuild OpenCV + binary from scratch, start"
     echo "  status   show state, PID, memory, uptime, health and detector mode"
     echo "  logs     follow the service console log (Ctrl-C to exit)"
     echo "  help     this message"
@@ -105,6 +107,34 @@ function _build
         _log WRN "OpenCV >= 4.8 not found — building the stub detector (no real YOLO; run 'make opencv-build')"
         make build
     end
+end
+
+# Stop the service, nuke the local OpenCV build, rebuild from scratch,
+# and start again. Useful after a toolchain upgrade or when the binary
+# links against the wrong OpenCV (distro vs local).
+#
+# Raises:
+#   Exit 1: When opencv-build or opencv build fails.
+#
+# Returns:
+#   Exit 0 on success.
+function _rebuild
+    _stop
+    _log INF "cleaning OpenCV build cache and install prefix"
+    rm -rf $HOME/.cache/opencv-4.10.0
+    rm -rf $OPENCV_PREFIX
+    _log INF "rebuilding OpenCV from source (capped at 12 cores, ~10-15 min)"
+    make opencv-build; or begin
+        _log ERR "opencv-build failed"
+        return 1
+    end
+    _log INF "rebuilding binary with gocv YOLO engine"
+    make opencv; or begin
+        _log ERR "opencv build failed"
+        return 1
+    end
+    sleep 1
+    _start; or exit 1
 end
 
 # Query the HTTP health endpoint and print the result.
@@ -207,6 +237,9 @@ switch $argv[1]
         _stop
         sleep 1
         _start; or exit 1
+
+    case rebuild
+        _rebuild; or exit 1
 
     case status
         if _is_running

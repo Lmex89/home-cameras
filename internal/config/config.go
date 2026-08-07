@@ -24,7 +24,7 @@ type Config struct {
 	SnapshotRetentionDays   int     `env:"SNAPSHOT_RETENTION_DAYS" envDefault:"30"`
 	SnapshotZipAfterDays    int     `env:"SNAPSHOT_ZIP_AFTER_DAYS" envDefault:"7"`
 	VideoRetentionDays      int     `env:"VIDEO_RETENTION_DAYS" envDefault:"30"`
-	DefaultIntervalSeconds  int     `env:"DEFAULT_INTERVAL_SECONDS" envDefault:"60"`
+	DefaultIntervalSeconds  int     `env:"DEFAULT_INTERVAL_SECONDS" envDefault:"10"`
 	CaptureTimeoutSeconds   int     `env:"CAPTURE_TIMEOUT_SECONDS" envDefault:"120"`
 	HealthCheckIntervalMin  int     `env:"HEALTH_CHECK_INTERVAL_MINUTES" envDefault:"10"`
 	YoloModelPath           string  `env:"YOLO_MODEL_PATH" envDefault:"models/yolov8n.pt"`

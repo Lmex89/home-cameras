@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_camera_date ON snapshots(camera_id, captured_at);
 CREATE INDEX IF NOT EXISTS idx_snapshots_captured_at ON snapshots(captured_at);
+CREATE INDEX IF NOT EXISTS idx_snapshots_status_image ON snapshots(status, image_path);
 
 CREATE TABLE IF NOT EXISTS analysis_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
