@@ -29,6 +29,7 @@ type Config struct {
 	HealthCheckIntervalMin  int     `env:"HEALTH_CHECK_INTERVAL_MINUTES" envDefault:"10"`
 	YoloModelPath           string  `env:"YOLO_MODEL_PATH" envDefault:"models/yolov8n.pt"`
 	YoloConfidenceThreshold float64 `env:"YOLO_CONFIDENCE_THRESHOLD" envDefault:"0.5"`
+	YoloNumThreads          int     `env:"YOLO_NUM_THREADS" envDefault:"4"`
 	ReviewPersonAfterHour   int     `env:"REVIEW_PERSON_AFTER_HOUR" envDefault:"22"`
 	ReviewPersonBeforeHour  int     `env:"REVIEW_PERSON_BEFORE_HOUR" envDefault:"6"`
 	ReviewMaxPersonCount    int     `env:"REVIEW_MAX_PERSON_COUNT" envDefault:"5"`

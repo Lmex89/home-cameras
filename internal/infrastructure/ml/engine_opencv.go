@@ -55,12 +55,15 @@ const (
 )
 
 // newGOCVEngine loads the ONNX YOLO model; falls back to the stub when
-// the model file is missing or loading fails.
+// the model file is missing or loading fails. Caps inference threads to
+// the configured YOLO_NUM_THREADS (default 4) so detection never
+// saturates every core of the host.
 func newGOCVEngine(cfg config.Config) Detector {
 	modelPath := ModelPath(cfg)
 	if modelPath == "" {
 		return stubDetector{}
 	}
+	gocv.SetNumThreads(cfg.YoloNumThreads)
 	net := gocv.ReadNet(modelPath, "")
 	if net.Empty() {
 		return stubDetector{}

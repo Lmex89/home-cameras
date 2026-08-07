@@ -247,6 +247,7 @@ are the Telegram bot token / chat ID and S3 keys *if* you enable those integrati
 | `ANALYSIS_INTERVAL_SECONDS` | `30` | Polling frequency for pending `analysis_jobs`. |
 | `YOLO_MODEL_PATH` | `models/yolov8n.pt` | Path to the model. `.pt` works with the opencv engine; `.onnx` works with `scripts/export_yolo_onnx.py`. `make model` downloads the `.onnx` next to it. |
 | `YOLO_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence to record a detection. |
+| `YOLO_NUM_THREADS` | `4` | Max CPU threads used by YOLO inference (`cv::setNumThreads`). |
 | `REVIEW_PERSON_AFTER_HOUR` | `22` | Person detections **after** this hour (24h) are flagged. |
 | `REVIEW_PERSON_BEFORE_HOUR` | `6` | Person detections **before** this hour (24h) are flagged. |
 | `REVIEW_MAX_PERSON_COUNT` | `5` | Person count above this in a single snapshot is flagged. |
