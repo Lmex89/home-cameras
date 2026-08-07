@@ -176,7 +176,9 @@ func timelapseJob(ctx context.Context, cfg config.Config, day time.Time, timelap
 		return
 	}
 	vdir := cfg.VideosDir()
-	os.MkdirAll(vdir, 0o755)
+	if err := os.MkdirAll(vdir, 0o755); err != nil {
+		log.Warn().Err(err).Str("dir", vdir).Msg("cannot create videos dir")
+	}
 	persistent := filepath.Join(vdir, fmt.Sprintf("timelapse_annotated_%d_%s.mp4", cameraID, day.Format("2006-01-02")))
 	if err := os.Rename(outputPath, persistent); err != nil {
 		log.Error().Err(err).Msg("timelapse move failed")
@@ -190,9 +192,11 @@ func timelapseJob(ctx context.Context, cfg config.Config, day time.Time, timelap
 	if storageSvc != nil {
 		if url, err := storageSvc.Upload(ctx, persistent); err == nil {
 			blazeURL = url
+		} else {
+			log.Warn().Err(err).Str("path", persistent).Msg("timelapse upload to storage failed")
 		}
 	}
-	sizeMB := float64(mustFileSize(persistent)) / (1024 * 1024)
+	sizeMB := float64(fileSizeBytes(persistent)) / (1024 * 1024)
 	caption := fmt.Sprintf("\U0001f3a5 Camera %d — timelapse %s (annotated, %.1f MB)", cameraID, day.Format("2006-01-02"), sizeMB)
 	notifier.SendVideo(ctx, persistent, caption,
 		fmt.Sprintf("http://localhost:%d/api/videos/download/%s", cfg.Port, filepath.Base(persistent)),
@@ -246,7 +250,7 @@ func healthJob(ctx context.Context, cfg config.Config, db *sqlx.DB, notifier *te
 	log.Debug().Int("cameras", len(cams)).Msg("health check OK")
 }
 
-// mustFileSize returns a file size in bytes (0 when unreadable).
+// fileSizeBytes returns a file size in bytes (0 when unreadable).
 //
 // Args:
 //
@@ -255,7 +259,7 @@ func healthJob(ctx context.Context, cfg config.Config, db *sqlx.DB, notifier *te
 // Returns:
 //
 //	The size in bytes.
-func mustFileSize(path string) int64 {
+func fileSizeBytes(path string) int64 {
 	if info, err := os.Stat(path); err == nil {
 		return info.Size()
 	}

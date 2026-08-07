@@ -232,30 +232,6 @@ func mapRepoErr(w http.ResponseWriter, err error, notFoundMsg string) bool {
 	return true
 }
 
-// queryDate parses a YYYY-MM-DD query parameter using the project
-// timezone, writing a 400 on failure.
-//
-// Args:
-//
-//	w: The response writer.
-//	r: The incoming request.
-//	name: The query parameter name.
-//	fallback: Value used when the parameter is absent.
-//
-// Returns:
-//
-//	The parsed date and whether parsing succeeded.
-func queryDate(w http.ResponseWriter, r *http.Request, name, fallback string) (string, bool) {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		raw = fallback
-	}
-	if raw == "" {
-		return "", true
-	}
-	return raw, true
-}
-
 // strPtr returns a pointer to s, or nil for empty strings (used when
 // mapping optional API fields).
 //

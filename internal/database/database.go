@@ -6,7 +6,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	_ "embed"
 	"fmt"
 	"strings"
@@ -196,6 +195,3 @@ func PingWithTimeout(ctx context.Context, db *sqlx.DB) error {
 	var one int
 	return db.GetContext(cctx, &one, "SELECT 1")
 }
-
-// Ensure sql import is used (driver registration side effect).
-var _ = sql.ErrNoRows

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,14 +112,23 @@ func (s *Server) createAnnotatedVideo(w http.ResponseWriter, r *http.Request) {
 		if url, err := s.deps.Storage.Upload(r.Context(), persistent); err == nil {
 			blazeURL = url
 			log.Info().Str("url", url).Msg("annotated video uploaded to storage")
+		} else {
+			log.Warn().Err(err).Str("path", persistent).Msg("annotated video upload to storage failed")
 		}
 	}
+
+	// The request context is cancelled when this handler returns, so the
+	// background notification gets its own bounded context.
 	go func() {
+		notifyCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
 		sizeMB := fileSizeMB(persistent)
 		caption := "\U0001f3a5 Camera " + cam.Name + " — timelapse " + payload.Date.Time().Format("2006-01-02") + " (annotated, " + sizeMB + " MB)"
-		s.deps.Notifier.SendVideo(r.Context(), persistent, caption,
+		if !s.deps.Notifier.SendVideo(notifyCtx, persistent, caption,
 			"http://localhost:"+itoa(s.deps.Cfg.Port)+"/api/videos/download/"+filepath.Base(persistent),
-			blazeURL)
+			blazeURL) {
+			log.Warn().Str("path", persistent).Msg("telegram notification for annotated video failed")
+		}
 	}()
 
 	url := "/api/videos/download/" + filepath.Base(persistent)

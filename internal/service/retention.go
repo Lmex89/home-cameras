@@ -530,8 +530,7 @@ func appendToZip(zipPath, src, name string) error {
 				os.Remove(tmp)
 				return err
 			}
-			hdr := &zip.FileHeader{Name: f.Name, Method: zip.Deflate}
-			hdr.SetModTime(f.Modified)
+			hdr := &zip.FileHeader{Name: f.Name, Method: zip.Deflate, Modified: f.Modified}
 			w, err := zw.CreateHeader(hdr)
 			if err != nil {
 				rc.Close()

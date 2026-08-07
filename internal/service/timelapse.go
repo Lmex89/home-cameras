@@ -154,7 +154,7 @@ func (s *TimelapseService) RenderAnnotated(ctx context.Context, cameraID int64, 
 		os.RemoveAll(tempDir)
 		return "", "", err
 	}
-	sizeMB := float64(mustFileSize(outputPath)) / (1024 * 1024)
+	sizeMB := float64(fileSizeBytes(outputPath)) / (1024 * 1024)
 	log.Info().Float64("size_mb", sizeMB).Str("output", outputPath).Msg("annotated timelapse ready")
 	return outputPath, tempDir, nil
 }
@@ -432,8 +432,8 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, data, 0o644)
 }
 
-// mustFileSize returns the size of a file (0 when it cannot be read).
-func mustFileSize(path string) int64 {
+// fileSizeBytes returns the size of a file (0 when it cannot be read).
+func fileSizeBytes(path string) int64 {
 	if info, err := os.Stat(path); err == nil {
 		return info.Size()
 	}

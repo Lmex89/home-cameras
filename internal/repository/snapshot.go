@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -20,12 +22,15 @@ func NewSnapshotRepository(db DBTX) *SnapshotRepository { return &SnapshotReposi
 const snapshotCols = `id, camera_id, captured_at, image_path, file_size, status,
 	error_message, archive_path`
 
-// GetByID returns a snapshot or an error when missing.
+// GetByID returns a snapshot or ErrNotFound when missing.
 func (r *SnapshotRepository) GetByID(ctx context.Context, id int64) (*domain.Snapshot, error) {
 	var s domain.Snapshot
 	err := sqlx.GetContext(ctx, r.db, &s,
 		"SELECT "+snapshotCols+" FROM snapshots WHERE id = ?", id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &s, nil

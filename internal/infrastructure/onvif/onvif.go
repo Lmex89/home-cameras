@@ -24,6 +24,9 @@ import (
 // Client talks to a single ONVIF camera over SOAP/HTTP.
 type Client struct {
 	timeout time.Duration
+	// httpClient overrides the per-call client (test injection; nil
+	// builds a default client with the configured timeout).
+	httpClient *http.Client
 }
 
 // NewClient builds a client; the timeout applies per SOAP call.
@@ -80,13 +83,22 @@ type TestResult struct {
 //	The device handle (which performs GetCapabilities on creation).
 func (c *Client) device(host string, port int, user, pass string) (*onvif.Device, error) {
 	xaddr := fmt.Sprintf("http://%s:%d/onvif/device_service", host, port)
-	httpClient := &http.Client{Timeout: c.timeout}
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: c.timeout}
+	}
 	return onvif.NewDevice(onvif.DeviceParams{
 		Xaddr:      xaddr,
 		Username:   user,
 		Password:   pass,
 		HttpClient: httpClient,
 	})
+}
+
+// soapCaller is the slice of the ONVIF device the adapter needs:
+// invoking a SOAP method returns the raw HTTP response.
+type soapCaller interface {
+	CallMethod(method any) (*http.Response, error)
 }
 
 // call invokes a SOAP method and decodes the response body into out
@@ -102,7 +114,7 @@ func (c *Client) device(host string, port int, user, pass string) (*onvif.Device
 // Returns:
 //
 //	Any transport, HTTP, or XML error.
-func call(dev *onvif.Device, req any, out any) error {
+func call(dev soapCaller, req any, out any) error {
 	resp, err := dev.CallMethod(req)
 	if err != nil {
 		return err
@@ -178,7 +190,7 @@ func (c *Client) TestConnection(host string, port int, user, pass string) TestRe
 // Returns:
 //
 //	The discovered profiles.
-func (c *Client) getProfiles(dev *onvif.Device) ([]Profile, error) {
+func (c *Client) getProfiles(dev soapCaller) ([]Profile, error) {
 	var body struct {
 		Profiles []struct {
 			Token                     string `xml:"token,attr"`

@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,6 +48,9 @@ func (r *CameraRepository) GetByID(ctx context.Context, id int64) (*domain.Camer
 		        snapshot_url, interval_seconds, enabled, created_at, updated_at
 		 FROM cameras WHERE id = ?`, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	return &cam, nil

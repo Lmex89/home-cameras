@@ -73,10 +73,9 @@ func NewServer(deps Deps) *Server {
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 
-	// Middleware stack: request id, real IP, recovery, request logging,
-	// CORS (parity with the legacy CORSMiddleware allow-all config).
+	// Middleware stack: request id, recovery, request logging, CORS
+	// (parity with the legacy CORSMiddleware allow-all config).
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(hlog.RequestIDHandler("request_id", "Request-Id"))
 	r.Use(s.requestLogger)

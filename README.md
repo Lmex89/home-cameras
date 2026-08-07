@@ -1,79 +1,283 @@
 # Camera Monitor (Go)
 
-ONVIF-compatible camera snapshot monitoring system with local ML analysis. Periodically captures snapshots from IP cameras, runs YOLO object detection, flags unusual events for human review, and provides a web dashboard for visualization. Single Go binary, feature-parity port of the original Python/FastAPI implementation.
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](https://go.dev)
+[![Build](https://img.shields.io/badge/build-make-0f9d58)](Makefile)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Code Graph](https://img.shields.io/badge/codegraph-indexed-7c3aed)](https://github.com/isink17/codegraph)
+
+ONVIF-compatible camera snapshot monitoring system with local ML analysis. Periodically
+captures snapshots from IP cameras, runs YOLO object detection, flags unusual events for
+human review, generates annotated daily timelapse videos, and ships a self-contained
+web dashboard. Single static Go binary — no CGO, no Python, no service mesh.
+
+This repository is a complete Go port of a prior Python/FastAPI implementation. It
+preserves the SQLite schema and env-var names, but ships as one binary and removes the
+runtime dependencies on Python, FastAPI, SQLAlchemy and APScheduler.
+
+---
+
+## Table of contents
+
+- [Why?](#why)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Configuration reference](#configuration-reference)
+- [Defining cameras (`cameras.yaml`)](#defining-cameras-camerasyaml)
+- [Snapshot capture strategy](#snapshot-capture-strategy)
+- [HTTP API](#http-api)
+- [Web dashboard](#web-dashboard)
+- [ML analysis & review rules](#ml-analysis--review-rules)
+- [Timelapse videos](#timelapse-videos)
+- [Retention & purge](#retention--purge)
+- [Data directory layout](#data-directory-layout)
+- [Project layout](#project-layout)
+- [Development workflow](#development-workflow)
+- [Testing](#testing)
+- [Docker](#docker)
+- [Telegram & S3 setup](#telegram--s3-setup)
+- [Troubleshooting](#troubleshooting)
+- [Migrating from the Python app](#migrating-from-the-python-app)
+- [Security notes](#security-notes)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Why?
+
+Home / small-business camera setups usually outgrow the vendor's cloud quickly: you want
+**local storage you control**, **automated review of routine events** (a person in the
+backyard at 3 a.m. shouldn't need you to scrub a 12-hour timeline), and a **reliable
+daily digest** of what happened.
+
+This service runs entirely on a single host:
+
+- pulls snapshots from any ONVIF-compatible camera (or via direct URL / RTSP fallback),
+- runs a small YOLO model locally to detect people, vehicles and other objects,
+- flags suspicious events for human review,
+- archives the rest for `SNAPSHOT_RETENTION_DAYS`,
+- and produces a daily annotated timelapse you can review on your phone.
+
+No cloud lock-in. No vendor telemetry. One binary, one SQLite file, one volume.
 
 ## Features
 
-- **ONVIF client** — connects to cameras via ONVIF protocol, fetches snapshot URIs
-- **Scheduled capture** — per-camera configurable interval (default 1 min), restart-anchored timers
-- **Triple fallback capture** — direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile)
-- **ML object detection** — YOLO runs locally on every snapshot (graceful stub mode when the model is missing)
-- **Review rule engine** — auto-flags persons after hours, high crowd counts, unexpected objects
-- **Human review workflow** — API endpoints to list, confirm, or reject flagged snapshots
-- **Web dashboard** — view last snapshot, status, daily reports, and review badges for all cameras
-- **Annotated timelapse videos** — daily MP4 with YOLO detection overlays, uploaded to S3/B2 and shared via Telegram
-- **Telegram notifications** — get timelapse videos and download links sent to a chat
-- **S3-compatible storage** — upload large videos to Backblaze B2 or any S3-compatible provider
-- **YAML-based setup** — define cameras in `cameras.yaml`, seeded on startup
-- **Docker ready** — multi-stage build (`scratch` default, `opencv` base adds ffmpeg)
+| Area | What you get |
+| --- | --- |
+| **ONVIF client** | Connects to cameras via ONVIF, auto-selects a profile, falls back to a configurable `snapshot_url`, and finally to RTSP+ffmpeg if the camera doesn't expose `GetSnapshotUri`. |
+| **Scheduled capture** | Per-camera interval (default 60 s) with **restart-anchored** timers — the schedule survives process restarts. |
+| **Local ML detection** | YOLO runs in-process; default build uses a **stub detector** (no OpenCV needed), opt into native gocv inference with `make opencv`. |
+| **Review rule engine** | Auto-flags persons after hours, high crowd counts, and unexpected object classes; surfaces them in the dashboard and `GET /api/reviews/pending`. |
+| **Annotated timelapse** | Daily MP4 with YOLO bounding boxes, rendered with `gg` + `golang.org/x/image`, then optionally uploaded to S3-compatible storage and pushed to Telegram. |
+| **Telegram notifier** | Sends timelapses, sends health alarms when a camera goes stale, and posts on scheduled-job panics. >50 MB videos are sent as a text+URL link instead. |
+| **S3-compatible storage** | First-class support for Backblaze B2 (and any S3-compatible endpoint) via `minio-go`. |
+| **SQLite everywhere** | `modernc.org/sqlite` (pure Go, no CGO). WAL + `busy_timeout` PRAGMAs out of the box. The whole DB is one file you can `cp` for backup. |
+| **Single static binary** | `make build` produces a `bin/cameras-go` you can `scp` to a server. `make docker` produces a `FROM scratch` image (~25 MB). |
+| **Embedded SPA** | The web dashboard is `//go:embed`-ed in the binary — no separate static file server. |
+| **YAML seed** | Cameras are idempotently seeded from `cameras.yaml` on every boot, so config is in version control. |
 
 ## Quick start
 
+### 1. Clone & enter
+
 ```bash
-make run        # dev server on :8004, data dir ./data
-make build      # compile bin/cameras-go
-make test       # go test ./... -race -cover
-make vet        # go vet ./...
-make opencv     # build with native YOLO via gocv (-tags opencv)
-make docker     # docker build -t cameras-go .
+git clone <your fork> home-cameras
+cd home-cameras
 ```
 
-Open http://localhost:8004
+### 2. Configure
 
-## Configuration
+```bash
+cp .env.example .env             # tweak .env (TZ, port, Telegram, S3 keys)
+cp cameras.example.yaml cameras.yaml  # add your cameras
+$EDITOR cameras.yaml .env
+```
 
-Set via environment variables or `.env` file at the working directory:
+### 3. Run
+
+```bash
+make run                         # builds and launches on :8004
+# or
+make build && ./bin/cameras-go
+```
+
+Open <http://localhost:8004> — the dashboard is served from the same binary.
+
+### 4. (Optional) Install a YOLO model
+
+The default build uses a **stub detector** that records empty analyses. To get real
+detections, build with native OpenCV inference and drop a YOLOv8 model next to the
+binary:
+
+```bash
+# Export from a .pt checkpoint (Python venv, one-time)
+python scripts/export_yolo_onnx.py yolov8n.pt models/
+# or download a pretrained ONNX directly.
+
+# Build with the gocv YOLO engine
+make opencv                      # produces bin/cameras-go with -tags opencv
+
+# Point the config at the model
+echo 'YOLO_MODEL_PATH=models/yolov8n.onnx' >> .env
+```
+
+### 5. Verify
+
+```bash
+curl http://localhost:8004/api/healthz
+# {"database":true,"status":"ok","storage":false,"telegram":false,"time":"..."}
+
+curl http://localhost:8004/api/cameras
+# [...]
+```
+
+## How it works
+
+The service runs four concurrent workloads inside one process:
+
+```
+                 ┌────────────────────────────────────────────────┐
+   cameras.yaml ─┤ seed.FromYAML (idempotent on every boot)       │
+                 └────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+                 ┌────────────────────────────────────────────────┐
+   per-camera    │ scheduler: interval timer (restart-anchored)   │
+   IntervalTrigger captureJob → SnapshotService.Capture           │
+                 │   (direct URL → ONVIF GetSnapshotUri → RTSP)   │
+                 └────────────────────────────────────────────────┘
+                                       │
+                          ┌────────────┴────────────┐
+                          ▼                         ▼
+             ┌────────────────────┐     ┌────────────────────┐
+             │ data/snapshots/... │     │ analysis_jobs      │
+             └────────────────────┘     └────────────────────┘
+                                                  │
+                                                  ▼
+   every ANALYSIS_INTERVAL_SECONDS:
+             ┌────────────────────────────────────────────────┐
+             │ scheduler.analysisTick → AnalysisService        │
+             │  → ml.Detector (stub | gocv YOLO)               │
+             │  → applyReviewRules                             │
+             │  → snapshot_analyses row                        │
+             └────────────────────────────────────────────────┘
+
+   every day @ 06:00 (configurable):
+             ┌────────────────────────────────────────────────┐
+             │ retention.Run: zip + delete old snapshots/videos│
+             └────────────────────────────────────────────────┘
+
+   every day @ TIMELAPSE_HOUR (default 21:00):
+             ┌────────────────────────────────────────────────┐
+             │ TimelapseService.RenderAnnotated                │
+             │  → upload to S3 (optional)                      │
+             │  → send via Telegram (or text+URL if >50 MB)    │
+             └────────────────────────────────────────────────┘
+
+   every HEALTH_CHECK_INTERVAL_MINUTES:
+             ┌────────────────────────────────────────────────┐
+             │ healthJob: raise Telegram alarm on stale cameras│
+             └────────────────────────────────────────────────┘
+```
+
+Key properties of the design:
+
+- **Restart-anchored timers.** The first capture after boot is scheduled relative to
+  the camera's last successful snapshot (or `now()` for new cameras). This means a
+  09:00, 09:01, 09:02 … schedule doesn't drift to 10:00, 11:00, 12:00 after a restart.
+- **Panic-safe jobs.** Every scheduled callback runs through `scheduler.guard`, which
+  recovers panics, logs them, and posts a Telegram alarm. One bad analysis run can't
+  kill the process.
+- **SQLite write contention mitigation.** Retention pauses capture/analysis jobs
+  before opening a long write transaction, then resumes them. This avoids
+  `database is locked` errors on cheap disks.
+- **Archive references are in-DB.** When a raw JPEG is zipped, the row's
+  `archive_path` becomes `data/archives/.../file.zip::filename.jpg`. The HTTP layer
+  transparently serves from disk or ZIP based on what's available.
+
+## Configuration reference
+
+Configuration is loaded from a `.env` file in the working directory, then overridden by
+real environment variables. All settings have safe defaults; the only required values
+are the Telegram bot token / chat ID and S3 keys *if* you enable those integrations.
+
+### Core
 
 | Variable | Default | Description |
-|---|---|---|
-| `APP_NAME` | `Camera Monitor` | App title |
-| `DEBUG` | `true` | Enable debug logging |
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `8000` | HTTP port |
-| `SNAPSHOT_RETENTION_DAYS` | `30` | Auto-delete snapshot records/archives older than this |
-| `SNAPSHOT_ZIP_AFTER_DAYS` | `7` | Zip raw snapshots older than this into daily archives |
-| `VIDEO_RETENTION_DAYS` | `30` | Auto-delete video archives older than this |
-| `DEFAULT_INTERVAL_SECONDS` | `60` | Default capture interval for new cameras |
-| `CAPTURE_TIMEOUT_SECONDS` | `30` | Timeout for a single capture attempt |
-| `HEALTH_CHECK_INTERVAL_MINUTES` | `10` | How often to health-check cameras |
-| `TIMEZONE` | `America/Mexico_City` | Timezone for cron triggers and timestamps |
-| `ANALYSIS_ENABLED` | `true` | Enable ML analysis pipeline |
-| `ANALYSIS_INTERVAL_SECONDS` | `30` | How often to poll for pending analysis jobs |
-| `YOLO_MODEL_PATH` | `yolov8n.onnx` | Path to YOLO ONNX weights file |
-| `YOLO_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence for detection |
-| `REVIEW_PERSON_AFTER_HOUR` | `22` | Hour (0-23) after which persons trigger review |
-| `REVIEW_PERSON_BEFORE_HOUR` | `6` | Hour (0-23) before which persons trigger review |
-| `REVIEW_MAX_PERSON_COUNT` | `5` | Max persons before auto-flagging |
-| `TIMELAPSE_HOUR` | `6` | Hour when the daily annotated timelapse is generated |
-| `TIMELAPSE_MINUTE` | `30` | Minute when the daily annotated timelapse is generated |
-| `TIMELAPSE_CAMERA_ID` | `6` | Camera ID for the daily annotated timelapse |
-| `TIMELAPSE_OBJECT_CLASSES` | `person,car,motorcycle` | Comma-separated classes to annotate |
-| `TIMELAPSE_FRAME_DURATION` | `0.55` | Seconds per frame in the annotated video |
-| `TIMELAPSE_WORKERS` | `3` | Parallel workers for frame annotation |
-| `TELEGRAM_ENABLED` | `false` | Send Telegram notifications |
-| `TELEGRAM_BOT_TOKEN` | `""` | Telegram bot token |
-| `TELEGRAM_CHAT_ID` | `""` | Telegram chat ID |
-| `STORAGE_ENABLED` | `false` | Upload videos to S3-compatible storage |
-| `STORAGE_ENDPOINT_URL` | `""` | S3 endpoint (e.g. Backblaze B2) |
-| `STORAGE_BUCKET_NAME` | `""` | Bucket name |
-| `STORAGE_ACCESS_KEY` | `""` | Access key ID |
-| `STORAGE_SECRET_KEY` | `""` | Secret access key |
-| `STORAGE_PUBLIC_URL` | `""` | Public base URL for uploaded files |
-| `STORAGE_REGION` | `us-west-004` | S3 region |
+| --- | --- | --- |
+| `APP_NAME` | `Camera Monitor` | Display name in the dashboard. |
+| `DEBUG` | `true` | Verbose zerolog output (request log, scheduler traces). |
+| `HOST` | `0.0.0.0` | Bind address. |
+| `PORT` | `8004` | HTTP port. |
+| `TIMEZONE` | `America/Mexico_City` | IANA timezone. All timestamps, cron triggers, and `Day` parsing use this zone. |
+| `DATA_DIR` | `./data` | Root for snapshots, videos, archives, logs, models, and the SQLite file. |
 
-## Cameras YAML
+### Capture
 
-Create `cameras.yaml` in the project root:
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DEFAULT_INTERVAL_SECONDS` | `60` | Fallback when a camera in `cameras.yaml` doesn't specify one. |
+| `CAPTURE_TIMEOUT_SECONDS` | `120` | Maximum time for one capture attempt (direct URL / ONVIF / RTSP). |
+| `HEALTH_CHECK_INTERVAL_MINUTES` | `10` | Stale-camera check frequency; raises a Telegram alarm when no snapshot has been written within `2 × CAPTURE_TIMEOUT_SECONDS`. |
+
+### Retention
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SNAPSHOT_RETENTION_DAYS` | `30` | Delete snapshot rows + orphan archives older than this. |
+| `SNAPSHOT_ZIP_AFTER_DAYS` | `7` | Zip raw JPEGs older than this into `data/archives/`. |
+| `VIDEO_RETENTION_DAYS` | `30` | Delete video rows + archives older than this. |
+
+### ML analysis
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ANALYSIS_ENABLED` | `true` | Master switch for the analysis pipeline. |
+| `ANALYSIS_INTERVAL_SECONDS` | `30` | Polling frequency for pending `analysis_jobs`. |
+| `YOLO_MODEL_PATH` | `models/yolov8n.pt` | Path to the model. `.pt` works with the opencv engine; `.onnx` works with `scripts/export_yolo_onnx.py`. |
+| `YOLO_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence to record a detection. |
+| `REVIEW_PERSON_AFTER_HOUR` | `22` | Person detections **after** this hour (24h) are flagged. |
+| `REVIEW_PERSON_BEFORE_HOUR` | `6` | Person detections **before** this hour (24h) are flagged. |
+| `REVIEW_MAX_PERSON_COUNT` | `5` | Person count above this in a single snapshot is flagged. |
+
+### Timelapse
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TIMELAPSE_ENABLED` | `true` | Master switch for the daily timelapse cron. |
+| `TIMELAPSE_HOUR` | `21` | Hour (0-23) the daily timelapse runs. |
+| `TIMELAPSE_MINUTE` | `0` | Minute (0-59) the daily timelapse runs. |
+| `TIMELAPSE_CAMERA_ID` | `6` | Camera ID used for the daily annotated timelapse. |
+| `TIMELAPSE_OBJECT_CLASSES` | `person,car,motorcycle` | Comma-separated YOLO classes to draw bounding boxes for. |
+| `TIMELAPSE_FRAME_DURATION` | `0.4675` | Seconds per frame in the output MP4. |
+| `TIMELAPSE_WORKERS` | `3` | Parallel workers used to render annotated frames. |
+
+### Telegram
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TELEGRAM_ENABLED` | `false` | Enable Telegram notifications. |
+| `TELEGRAM_BOT_TOKEN` | `""` | Bot token from `@BotFather`. |
+| `TELEGRAM_CHAT_ID` | `""` | Target chat / channel ID. |
+
+### S3-compatible storage
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `STORAGE_ENABLED` | `false` | Enable uploads (used for timelapse videos >50 MB and as a Telegram link target). |
+| `STORAGE_ENDPOINT_URL` | `""` | S3 endpoint (e.g. `https://s3.us-east-005.backblazeb2.com`). |
+| `STORAGE_BUCKET_NAME` | `""` | Bucket name. |
+| `STORAGE_ACCESS_KEY` | `""` | Access key ID. |
+| `STORAGE_SECRET_KEY` | `""` | Secret access key. |
+| `STORAGE_PUBLIC_URL` | `""` | Public base URL for the bucket (used to build share links). |
+| `STORAGE_REGION` | `us-west-004` | S3 region. |
+
+## Defining cameras (`cameras.yaml`)
+
+Cameras are seeded from `cameras.yaml` in the working directory on every boot. The
+seeder is **idempotent**: cameras present in both YAML and DB are updated, new ones
+are inserted, and cameras missing from the YAML are deleted from the DB.
 
 ```yaml
 cameras:
@@ -81,150 +285,565 @@ cameras:
     host: "192.168.1.100"
     port: 80
     username: "admin"
-    password: "cambio123"
-    interval_seconds: 60
+    password: "your_password_here"
+    interval_seconds: 60        # omit to inherit DEFAULT_INTERVAL_SECONDS
     enabled: true
-    snapshot_url: "http://192.168.1.100/cgi-bin/snapshot.cgi"  # optional override
+
+  - name: "Puerta Principal"
+    host: "192.168.1.101"
+    port: 8899
+    username: "admin"
+    password: "your_password_here"
+    interval_seconds: 1800      # every 30 min
+    enabled: true
+
+  - name: "Cochera (snapshot URL override)"
+    host: "192.168.1.102"
+    port: 80
+    username: "admin"
+    password: "secret"
+    snapshot_url: "http://192.168.1.102/cgi-bin/snapshot.cgi"  # bypasses ONVIF
+    interval_seconds: 300
+    enabled: true
 ```
 
-## Snapshot capture fallback
+`profile_token` is optional and is passed to the ONVIF client when the camera's default
+profile isn't what you want. `snapshot_url` short-circuits capture entirely (the first
+strategy that succeeds wins; see below).
 
-Each camera attempt uses the following strategy (first success wins):
+The `cameras.example.yaml` in the repo has the same shape with placeholders — copy it
+to `cameras.yaml` and edit.
 
-1. **Direct URL** — if `snapshot_url` is set on the camera, HTTP GET that URL with HTTP Basic Auth
-2. **ONVIF `GetSnapshotUri`** — standard ONVIF snapshot pull (most compatible)
-3. **RTSP+ffmpeg** — ONVIF `GetStreamUri` → ffmpeg frame grab (auto-selects highest-resolution profile)
+## Snapshot capture strategy
 
-This means cameras that don't support `GetSnapshotUri` (e.g. cheap NVRs, older models) still work via RTSP.
+For every tick of a camera's interval, the service tries the following in order, and
+keeps the first success:
 
-## API
+1. **Direct URL** — if `snapshot_url` is set on the camera, `GET` that URL with HTTP
+   Basic Auth. This is the fastest path and works for cameras that expose a vendor
+   snapshot CGI.
+2. **ONVIF `GetSnapshotUri`** — the standard ONVIF approach. The service auto-selects
+   the highest-resolution H.264 profile and asks the camera for its snapshot URI.
+3. **RTSP + ffmpeg** — fallback. We resolve the RTSP stream URI via ONVIF, then
+   `exec ffmpeg` to grab a single frame as JPEG. Requires `ffmpeg` on `$PATH`; the
+   `opencv` Docker image bundles it.
+
+The first strategy that returns a valid JPEG wins. If all three fail, the snapshot row
+is recorded with `status = 'error'` and an `error_message` describing the last failure.
+
+## HTTP API
+
+All endpoints are mounted under `/api/`. The web dashboard is at `/` and `/reviews`
+(redirects to `/reviews.html`).
+
+### Cameras
 
 | Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Dashboard (HTML, embedded SPA) |
-| `GET` | `/reviews` | Review workflow (HTML) |
-| `GET` | `/api/cameras` | List cameras |
-| `POST` | `/api/cameras` | Add camera |
-| `GET` | `/api/cameras/{id}` | Camera detail |
-| `PUT` | `/api/cameras/{id}` | Update camera |
-| `DELETE` | `/api/cameras/{id}` | Remove camera |
-| `POST` | `/api/cameras/test` | Test ONVIF connection |
-| `POST` | `/api/cameras/{id}/snapshot` | Force snapshot |
-| `GET` | `/api/snapshots/{id}` | Get snapshot metadata (includes analysis) |
-| `GET` | `/api/snapshots/{camera_id}/by-date` | Snapshots by camera + date |
-| `GET` | `/api/snapshots/image/{id}` | Snapshot JPEG file |
-| `GET` | `/api/report/{date}` | Daily report data (includes analysis) |
-| `POST` | `/api/videos/generate` | Generate a timelapse video for a camera/date |
-| `GET` | `/api/videos/{filename}` | Download a generated or archived video |
-| `GET` | `/api/reviews/pending` | List snapshots flagged for review |
-| `GET` | `/api/reviews/count` | Count of pending reviews |
-| `GET` | `/api/reviews/detections` | Paginated detections browser (supports `days_back`, `date_from`, `camera_id`, `class_name`, `limit`, `offset`) |
-| `POST` | `/api/reviews/{id}/review` | Confirm or reject a review flag |
-| `POST` | `/api/retention/run` | Trigger the retention/archive cleanup job on demand |
-| `POST` | `/api/retention/purge` | Destructively purge snapshots/analyses/videos older than N days |
-| `POST` | `/api/videos/annotated` | Generate an annotated timelapse with YOLO detection overlays |
-| `GET` | `/healthz` | Health check |
+| --- | --- | --- |
+| `GET` | `/api/cameras` | List cameras with last-snapshot metadata (dashboard payload). |
+| `POST` | `/api/cameras` | Create a camera. |
+| `POST` | `/api/cameras/test` | Probe an ONVIF endpoint without persisting. |
+| `GET` | `/api/cameras/{id}` | Single camera. |
+| `PUT` | `/api/cameras/{id}` | Partial update; reschedules the capture job. |
+| `DELETE` | `/api/cameras/{id}` | Remove; also stops the capture job. |
+| `POST` | `/api/cameras/{id}/snapshot` | Force an out-of-schedule capture. |
 
-## Architecture
+### Snapshots
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/snapshots/{id}` | Snapshot metadata + analysis. |
+| `GET` | `/api/snapshots/{camera_id}/by-date?snapshot_date=YYYY-MM-DD` | All snapshots for a camera on a date. |
+| `GET` | `/api/snapshots/image/{id}` | Raw JPEG (falls back to ZIP archive). |
+| `GET` | `/api/data/manifest.json` | Dashboard manifest (last snapshot, counts, review queue). |
+| `GET` | `/api/report/{date}` | Daily report. |
+| `GET` | `/api/report/{date}/video/{camera_id}` | Stream a plain timelapse MP4 for the day. |
+
+### Videos
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/api/videos` | Render a plain timelapse for `camera_id` + `date` (+ optional `hour`). |
+| `POST` | `/api/videos/annotated` | Render an **annotated** timelapse, upload to S3, notify Telegram. |
+| `GET` | `/api/videos/download/{filename}` | Stream a generated or archived MP4. |
+
+### Reviews
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/reviews/pending` | Snapshots flagged for human review. |
+| `GET` | `/api/reviews/count` | Queue size. |
+| `GET` | `/api/reviews/detections?days_back=1&camera_id=&class_name=&limit=500&offset=0&date_from=` | Paginated detection browser. |
+| `POST` | `/api/reviews/bulk-review` | Mark many analyses at once. |
+| `POST` | `/api/reviews/{id}/review` | Confirm or reject a single flag. |
+
+### Retention
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/api/retention/run` | Trigger the daily retention pipeline on demand. Pauses capture/analysis while it runs. |
+| `POST` | `/api/retention/purge` | **Destructive.** Deletes everything older than `{"days": N}` without archiving. |
+
+### Misc
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/healthz` | DB ping + flags. Returns `200` even if some integrations are disabled. |
+| `GET` | `/api/healthz` | Alias of `/healthz`. |
+| `GET` | `/snapshots/*` | Static raw snapshot files (path-traversal safe). |
+
+## Web dashboard
+
+The repository ships a single-page dashboard embedded in the binary
+(`internal/web/static/index.html` + `app.js` + `app.css`). It is intentionally
+self-contained — no SPA framework, no CDNs, no external assets.
+
+Two pages are served:
+
+- **`/`** — overview of every camera: latest snapshot, total count, capture status,
+  and review queue badge. The "Force snapshot" and "Settings" actions hit the JSON
+  API.
+- **`/reviews`** — review queue: every analysis flagged for human review, with
+  one-click confirm/reject and bulk actions.
+
+The frontend is plain ES modules. Open the browser dev tools for the network log; the
+JSON contracts above are the only API it uses.
+
+## ML analysis & review rules
+
+After a successful capture, the snapshot service enqueues an `analysis_job`. A
+scheduler tick (every `ANALYSIS_INTERVAL_SECONDS`, default 30 s) drains the queue in
+batches of up to 5.
+
+The detector is an interface:
+
+```go
+type Detector interface {
+    Available() bool
+    Detect(ctx context.Context, imagePath string) ([]Detection, error)
+}
+```
+
+There are two implementations:
+
+- **Stub** (`internal/infrastructure/ml/stub.go`) — always returns no detections. Used
+  in the default build, in tests, and when no model file is configured. The pipeline
+  stays correct end-to-end (rows are written, the review engine still runs against
+  empty detections), so you can deploy the binary and watch the dashboard work
+  before wiring up a model.
+- **gocv YOLO** (`internal/infrastructure/ml/engine_opencv.go`, behind `-tags opencv`)
+  — loads an ONNX export of YOLOv8 (`yolov8n.onnx` or similar) via `gocv` and parses
+  the NCHW `1×84×8400` output tensor into `[]Detection`. Build with `make opencv`.
+
+`applyReviewRules` then sets `review_required = true` and a `review_reason` when:
+
+- the capture time is in `[REVIEW_PERSON_BEFORE_HOUR, REVIEW_PERSON_AFTER_HOUR)` and
+  at least one person is detected, or
+- the person count exceeds `REVIEW_MAX_PERSON_COUNT`, or
+- an "unexpected" class appears (rule is currently permissive and logs; extend
+  `applyReviewRules` in `internal/service/analysis.go` for custom rules per camera).
+
+Flagged rows are surfaced in:
+
+- the dashboard manifest (`/api/data/manifest.json`),
+- `GET /api/reviews/pending`,
+- the dedicated `/reviews` page.
+
+## Timelapse videos
+
+Two flavours:
+
+1. **Plain** (`POST /api/videos`) — `ffmpeg` concat over the day's raw JPEGs, no
+   overlays. Fast (a couple seconds per minute of output).
+2. **Annotated** (`POST /api/videos/annotated`) — the same flow, but every frame is
+   decoded with `golang.org/x/image`, YOLO bounding boxes are drawn with
+   `fogleman/gg` for the configured classes, and the result is re-encoded. Slow but
+   useful as a daily digest.
+
+The daily cron job at `TIMELAPSE_HOUR:TIMELAPSE_MINUTE` (defaults 21:00) generates the
+**annotated** timelapse for the **previous day** for `TIMELAPSE_CAMERA_ID`:
 
 ```
-cmd/server/main.go            # wiring: config → DB → services → scheduler → HTTP
-internal/
-├── config/config.go          # caarlos0/env + .env loader
-├── database/database.go      # sqlx + pure-Go SQLite (WAL PRAGMAs), //go:embed schema.sql, legacy migrations
-├── domain/
-│   ├── models.go             # entities + SQLTime (SQLite text ↔ time, isoformat JSON)
-│   └── schemas.go            # request/response DTOs, Day (accepts "YYYY-MM-DD")
-├── repository/               # 4 repos over DBTX (*sqlx.DB or *sqlx.Tx)
-├── service/                  # camera, snapshot, analysis, retention, timelapse
-├── infrastructure/
-│   ├── onvif/onvif.go        # use-go/onvif adapter (namespace-agnostic XML parsing)
-│   ├── ml/                   # Detector interface; stub.go default; engine_opencv.go behind -tags opencv
-│   ├── telegram/notifier.go  # 50 MB cap + S3 fallback
-│   ├── storage/s3.go         # minio-go
-│   └── archive/archive.go    # ZIP reference "zip::filename" reader
-├── api/                      # chi router + handlers (validation lives here)
-├── scheduler/                # per-camera timers (restart-anchored) + robfig/cron jobs
-├── seed/seed.go              # YAML → DB idempotent sync
-└── web/static/               # embedded SPA (index.html, reviews.html, app.js, app.css)
+ffmpeg -framerate 1/<TIMELAPSE_FRAME_DURATION> -i frames/%05d.png \
+       -c:v libx264 -pix_fmt yuv420p -movflags +faststart out.mp4
 ```
 
-Data flow: handlers → services (business logic) → repositories (data access). No UnitOfWork: services open `*sqlx.Tx` and pass it to repos. All timestamps are stored as SQLite text (`YYYY-MM-DD HH:MM:SS`) in the project timezone and emitted as ISO-8601 in JSON.
+If `STORAGE_ENABLED = true`, the file is uploaded and the public URL is preferred
+in the Telegram caption. If the file is >50 MB, the notifier sends a text+URL link
+instead of the binary (Telegram's bot API cap is 50 MB).
 
-## Analysis Pipeline
-
-After each successful snapshot capture, an `analysis_job` is enqueued. A scheduler poll (every 30s by default) picks pending jobs and runs them through:
-
-1. **YOLO object detection** — identifies persons, vehicles, animals, and other common objects
-2. **Rule engine** — applies heuristics to decide if human review is needed:
-   - Person detected during restricted hours (10pm–6am)
-   - Person count above threshold (default 5)
-   - Unexpected object classes for the camera's view
-3. **Result storage** — detection data, review flags, and anomaly scores are written to `snapshot_analyses`
-4. **Review surfacing** — flagged items appear in the dashboard manifest and the review API
-
-> The YOLO model is optional. The default build ships with a stub detector (no OpenCV dependency) and returns empty results; build with `-tags opencv` for native inference over an ONNX export (see `scripts/export_yolo_onnx.py` to produce it from a `.pt` checkpoint). The rest of the pipeline operates without errors in either mode.
-
-## Storage
-
-- `data/cameras.db` — SQLite database
-- `data/snapshots/{camera_id}/YYYY/MM/DD/HHMM.jpg` — captured images (raw)
-- `data/videos/*.mp4` — generated timelapse videos (raw)
-- `data/archives/snapshots/{camera_id}/{date}.zip` — zipped snapshots after `SNAPSHOT_ZIP_AFTER_DAYS`
-- `data/archives/videos/{camera_id}/{date}.zip` — zipped videos after the same threshold
-- `data/models/` — YOLO ONNX weights
-- `data/logs/` — daily rotating log files
-- `data/` is gitignored and mounted as a Docker volume
-
-### Retention lifecycle (daily at 06:00, or via `POST /api/retention/run`)
-
-1. **Zip** — raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` (default 7) are compressed into per-camera/per-day ZIP archives under `data/archives/`; the raw file is deleted and the DB row gains an `archive_path` reference (`{zip}::{filename}`). Snapshots whose raw file is missing are marked with a `<missing>` sentinel so they aren't reprocessed.
-2. **Delete** — records and orphaned archives older than `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS` (default 30) are removed. A ZIP is only deleted once all snapshots referencing it are also expired.
-
-Retention pauses capture/analysis jobs while running to avoid SQLite write contention.
-
-### Destructive purge (manual only via `POST /api/retention/purge`)
-
-Use this when you want to permanently delete data without archiving. Default is to keep the last 3 days.
+Manual trigger:
 
 ```bash
 curl -X POST -H "Content-Type: application/json" \
-  -d '{"days": 3}' http://localhost:8004/api/retention/purge
+     -d '{"camera_id": 5, "date": "2026-08-07"}' \
+     http://localhost:8004/api/videos/annotated
 ```
 
-This deletes raw snapshots, analysis records, analysis jobs, videos, and archives older than the given days. **No backups are created.**
+## Retention & purge
 
-### Annotated timelapse
+Two distinct jobs. Both pause capture/analysis while they run to avoid SQLite
+write contention.
 
-A daily annotated MP4 is generated at `TIMELAPSE_HOUR:TIMELAPSE_MINUTE` for `TIMELAPSE_CAMERA_ID`. The video overlays bounding boxes for the configured classes (e.g. `person,car,motorcycle`). The video is saved to `data/videos/`, optionally uploaded to S3-compatible storage, and sent via Telegram.
+### Retention (`POST /api/retention/run` or daily 06:00 cron)
 
-Run manually:
+1. **Zip** — raw JPEGs older than `SNAPSHOT_ZIP_AFTER_DAYS` (default 7) are compressed
+   into per-camera, per-day ZIP archives under `data/archives/`. The raw file is
+   deleted and the row's `archive_path` becomes `data/archives/...zip::filename.jpg`.
+   Snapshots whose raw file is already missing get a `<missing>` sentinel so the
+   retention loop doesn't re-process them.
+2. **Delete** — DB rows and orphan archives older than `SNAPSHOT_RETENTION_DAYS` /
+   `VIDEO_RETENTION_DAYS` (default 30) are removed. A ZIP is only deleted once every
+   snapshot referencing it has been expired.
+
+### Purge (`POST /api/retention/purge`)
+
+Destructive. Deletes raw snapshots, analysis records, analysis jobs, videos, and
+archives older than `{"days": N}` **without** creating archives. Use this when you
+want to reclaim disk space immediately. There is no undo.
 
 ```bash
 curl -X POST -H "Content-Type: application/json" \
-  -d '{"camera_id": 5, "date": "2026-07-17"}' http://localhost:8004/api/videos/annotated
+     -d '{"days": 3}' http://localhost:8004/api/retention/purge
 ```
+
+## Data directory layout
+
+All runtime data lives under `DATA_DIR` (default `./data`). This directory is
+gitignored and intended to be a Docker volume in production.
+
+```
+data/
+├── cameras.db              # SQLite — the entire application state
+├── snapshots/
+│   └── {camera_id}/
+│       └── {YYYY}/{MM}/{DD}/{HHMMSS}.jpg
+├── videos/
+│   └── timelapse_{camera_id}_{YYYY-MM-DD}.mp4
+│   └── timelapse_annotated_{camera_id}_{YYYY-MM-DD}.mp4
+├── archives/
+│   ├── snapshots/{camera_id}/{YYYY-MM-DD}.zip
+│   └── videos/{camera_id}/{YYYY-MM-DD}.zip
+├── models/                 # YOLO weights (.pt or .onnx)
+└── logs/
+    └── app_{YYYY-MM-DD}.log    # daily rotating zerolog file
+```
+
+## Project layout
+
+```
+home-cameras/
+├── cmd/
+│   └── server/
+│       └── main.go         # wiring: config → log → DB → services → scheduler → HTTP
+├── internal/
+│   ├── api/                # chi router + handlers; validation lives here
+│   │   ├── server.go       # router, middleware (request id, CORS, logging, recover)
+│   │   ├── cameras.go      # /api/cameras/*
+│   │   ├── snapshots.go    # /api/snapshots/*  + manifest
+│   │   ├── reviews.go      # /api/reviews/*
+│   │   ├── videos.go       # /api/videos/*
+│   │   ├── report.go       # /api/report/* and /api/data/manifest.json
+│   │   ├── retention.go    # /api/retention/*
+│   │   ├── pages.go        # /, /reviews.html, /snapshots/*
+│   │   └── helpers.go      # JSON, error mapping, path parsing
+│   ├── config/             # caarlos0/env + .env loader; derives filesystem paths
+│   ├── database/           # sqlx + pure-Go SQLite; //go:embed schema.sql
+│   ├── domain/
+│   │   ├── models.go       # entities + SQLTime (SQLite text ↔ time, ISO-8601 JSON)
+│   │   ├── models_test.go
+│   │   └── schemas.go      # request/response DTOs, Day ("YYYY-MM-DD")
+│   ├── repository/         # 4 repos over DBTX (*sqlx.DB or *sqlx.Tx)
+│   │   ├── camera.go
+│   │   ├── snapshot.go
+│   │   ├── snapshot_analysis.go
+│   │   ├── analysis_job.go
+│   │   ├── repository.go
+│   │   └── repository_test.go
+│   ├── service/            # business logic
+│   │   ├── camera.go
+│   │   ├── snapshot.go     # capture pipeline + daily video
+│   │   ├── analysis.go     # detector + review rules
+│   │   ├── retention.go    # zip + delete; destructive purge
+│   │   └── timelapse.go    # annotated MP4 render
+│   ├── infrastructure/
+│   │   ├── onvif/          # use-go/onvif adapter
+│   │   ├── ml/             # Detector interface
+│   │   │   ├── ml.go
+│   │   │   ├── stub.go     # always-empty
+│   │   │   ├── engine_default.go
+│   │   │   └── engine_opencv.go   # build tag: opencv
+│   │   ├── telegram/       # 50 MB cap + S3 fallback
+│   │   ├── storage/        # minio-go S3 client
+│   │   └── archive/        # ZIP reference reader
+│   ├── scheduler/          # per-camera timers + robfig/cron jobs + panic guard
+│   ├── seed/               # cameras.yaml → DB idempotent sync
+│   └── web/
+│       ├── web.go          # //go:embed static/
+│       └── static/
+│           ├── index.html
+│           ├── reviews.html
+│           ├── css/
+│           └── js/
+├── scripts/
+│   └── export_yolo_onnx.py # one-time .pt → .onnx conversion helper
+├── data/                   # gitignored; see "Data directory layout"
+├── .agents/skills/         # AI-assistant skills (accessibility, frontend-design, …)
+├── .codegraph/             # local code-index cache (do not commit)
+├── cameras.example.yaml
+├── .env.example
+├── Dockerfile
+├── Makefile
+├── AGENTS.md               # contributor / AI-assistant rules
+├── go.mod / go.sum
+└── README.md
+```
+
+The data flow is strict: **handlers → services → repositories**. There is no global
+state; everything is constructed in `cmd/server/main.go` and passed via constructor
+injection. Services open `*sqlx.Tx` and pass the transaction to repositories when
+they need atomicity.
+
+## Development workflow
+
+### Prerequisites
+
+- **Go 1.26+** (`go version` to check).
+- **`ffmpeg`** on `$PATH` (for RTSP capture and timelapse assembly).
+- (Optional) **OpenCV dev headers** for the gocv engine — `apt install libopencv-dev`
+  on Debian/Ubuntu, `brew install opencv` on macOS.
+- (Optional) **`air`** for live reload: `go install github.com/air-verse/air@latest`.
+- (Optional) **`codegraph`** for code intelligence (used by the `AGENTS.md`
+  instructions): `go install github.com/isink17/codegraph/cmd/codegraph@latest`.
+
+### Build matrix
+
+| Target | Command | Notes |
+| --- | --- | --- |
+| Default binary | `make build` | `bin/cameras-go`, no CGO, stub detector. |
+| Run locally | `make run` | Builds + runs against `./data`. |
+| Live reload | `make dev` | Wraps `air` (live reload). |
+| Format | `make fmt` | `gofmt -w cmd internal`. |
+| Vet | `make vet` | `go vet ./...`. |
+| Tests | `make test` | `go test ./... -race -cover`. |
+| gocv build | `make opencv` | `CGO_ENABLED=1 go build -tags opencv`. Requires OpenCV. |
+| Docker image | `make docker` | Multi-stage, `scratch` runtime by default. |
+| Clean | `make clean` | `rm -rf bin`. |
+
+### Code style
+
+This project follows the rules in `AGENTS.md`. Highlights:
+
+- **SOLID** — one reason to change per type; `*sqlx.DB` is injected, never a global;
+  the `ml.Detector` interface is small (`Available()` + `Detect()`).
+- **Conventional Commits** — `<type>(<scope>): <description>`.
+- **zerolog** — `log.Info().Int64("camera_id", id).Msg("…")`, never `fmt.Println`.
+- **Google-style doc comments** — every exported symbol has a docstring starting with
+  the symbol name and `Args:` / `Returns:` / `Raises:` sections where applicable.
+- **Validation in handlers** — DTOs carry `json` tags, handlers do the bound checks
+  (port range, `interval_seconds >= 10`, date format, pagination caps).
+
+### Code navigation
+
+The repository is indexed by [codegraph](https://github.com/isink17/codegraph). The
+MCP server is configured in `.mcp.json` and starts automatically with OpenCode. To
+use the CLI directly:
+
+```bash
+codegraph index .                                 # re-index after Go changes
+codegraph find-symbol . "SnapshotService"
+codegraph callers . --symbol "ProcessNextBatch"
+codegraph callees . --symbol "applyReviewRules"
+codegraph impact . --symbol "CameraService"
+codegraph search . "yolo inference"
+codegraph stats .
+```
+
+> The Go index lags file writes by ~1 s; run `codegraph index .` after large
+> restructurings.
+
+## Testing
+
+```bash
+make test                                 # go test ./... -race -cover
+go test ./internal/domain/... -v          # SQLTime, Day parsing
+go test ./internal/repository/... -v      # In-memory SQLite round-trips
+```
+
+Existing tests:
+
+- `internal/domain/models_test.go` — `SQLTime` SQLite text ↔ `time.Time` round trip,
+  `Day` JSON unmarshal, `Detection` shape.
+- `internal/repository/repository_test.go` — Camera / Snapshot / AnalysisJob /
+  SnapshotAnalysis CRUD against an in-memory SQLite (`file::memory:?cache=shared`).
+
+When adding tests for new repositories, use the in-memory SQLite pattern from
+`openTestDB` in `repository_test.go` — it's the same engine, just without a file.
 
 ## Docker
 
-```bash
-make docker                                # scratch image (stub detector)
-docker build --build-arg BASE=opencv -t cameras-go .  # alpine + ffmpeg + OpenCV
+The `Dockerfile` is multi-stage with two runtime targets selected by `--build-arg BASE`:
 
+| Build | Command | Image |
+| --- | --- | --- |
+| Default (stub) | `make docker` | `FROM scratch` — single static binary, ~25 MB. |
+| With ffmpeg | `docker build --build-arg BASE=opencv -t cameras-go .` | `FROM alpine` + ffmpeg + ca-certs. |
+| With OpenCV (gocv YOLO) | `docker build --build-arg BUILD_TAGS=opencv --build-arg BASE=opencv -t cameras-go .` | Adds native gocv; ~150 MB. |
+
+Run:
+
+```bash
 docker run -d --name cameras-go --restart unless-stopped \
-  -p 8004:8000 \
+  -p 8004:8004 \
   -v $PWD/data:/data \
   -v $PWD/cameras.yaml:/cameras.yaml \
   --env-file .env \
   cameras-go
 ```
 
-## Development
+Production checklist:
 
-```bash
-make vet        # go vet ./...
-make test       # go test ./... -race -cover
-make opencv     # build with native YOLO via gocv (requires OpenCV dev headers)
+- bind-mount `./data` and `./cameras.yaml` as shown above;
+- pass `.env` via `--env-file` (or your secrets manager — never bake it into the image);
+- if you use a self-hosted registry, push the `opencv` tag there for the ffmpeg-enabled
+  build;
+- put the container behind a reverse proxy (Caddy / nginx / Traefik) if you want TLS;
+  the binary itself only does HTTP.
+
+## Telegram & S3 setup
+
+### Telegram
+
+1. Talk to `@BotFather` on Telegram, send `/newbot`, follow the prompts.
+2. Copy the bot token to `TELEGRAM_BOT_TOKEN`.
+3. Send any message to your bot, then visit
+   `https://api.telegram.org/bot<token>/getUpdates` to discover your chat ID (or
+   add the bot to a channel and use the channel ID — note the `-100` prefix for
+   channels).
+4. Set `TELEGRAM_CHAT_ID` and `TELEGRAM_ENABLED=true`.
+
+The notifier has two channels:
+
+- **Daily timelapse** — the annotated MP4 is uploaded (or sent as a text+URL link if
+  >50 MB) at the timelapse cron time.
+- **Alarms** — health-check failures and scheduler panics are sent as plain text
+  messages immediately.
+
+### S3-compatible storage (Backblaze B2 example)
+
+1. Create a bucket in B2 (or any S3 provider). Make it **public** if you want the
+   share links to be directly accessible.
+2. Create an application key with read/write access to that bucket.
+3. Fill in `.env`:
+
+```env
+STORAGE_ENABLED=true
+STORAGE_ENDPOINT_URL=https://s3.us-east-005.backblazeb2.com
+STORAGE_BUCKET_NAME=your-bucket
+STORAGE_ACCESS_KEY=your_key_id
+STORAGE_SECRET_KEY=your_application_key
+STORAGE_PUBLIC_URL=https://your-bucket.s3.us-east-005.backblazeb2.com
+STORAGE_REGION=us-east-005
 ```
 
-The repository is indexed by [codegraph](https://github.com/isink17/codegraph) — run `codegraph index .` after restructuring packages.
+`minio-go` is used under the hood, so any S3-compatible endpoint works
+(Cloudflare R2, Minio, Wasabi, etc.).
+
+## Troubleshooting
+
+### "database is locked" errors in logs
+
+SQLite is a single-writer DB. The service already pauses capture/analysis during
+retention, but if you see this during normal operation you can:
+
+- increase the disk's IOPS (SQLite WAL is sensitive to slow fsync);
+- lower the capture frequency (`interval_seconds` per camera);
+- lower `ANALYSIS_INTERVAL_SECONDS` so jobs are drained more often.
+
+### Camera captures all return errors
+
+1. Test connectivity: `curl -u admin:pass http://<host>:<port>/onvif/device_service`.
+2. Use `POST /api/cameras/test` to confirm the ONVIF handshake.
+3. If the camera doesn't speak ONVIF, set `snapshot_url` on the camera in
+   `cameras.yaml` and restart.
+4. For RTSP-only cameras, ensure `ffmpeg` is on `$PATH` and the RTSP URL is reachable.
+
+### "object detector unavailable" in logs
+
+Expected when no model is configured. Build with `make opencv`, drop a `.onnx` file at
+`YOLO_MODEL_PATH`, and restart. Without a model, the pipeline still records empty
+analyses — flagged items just won't have detections to base rules on.
+
+### Timelapse video is huge / takes forever to render
+
+Annotated timelapses are slow by design. Knobs:
+
+- raise `TIMELAPSE_FRAME_DURATION` (e.g. `1.0` for 1 fps);
+- reduce `TIMELAPSE_OBJECT_CLASSES` to just `person`;
+- raise `TIMELAPSE_WORKERS` if you have CPU headroom.
+
+### Telegram sends text but no video
+
+Files >50 MB hit Telegram's bot API cap. The service automatically falls back to a
+text+URL link using `STORAGE_PUBLIC_URL`. Enable storage, or lower the per-frame
+duration to produce a smaller file.
+
+### Port already in use
+
+Change `PORT` in `.env`. The Docker example uses `8004` — change the `-p` mapping
+to match.
+
+## Migrating from the Python app
+
+The repository previously contained a Python/FastAPI implementation under `app/`. That
+code has been removed; this Go port is feature-parity. If you still have a Python
+install running:
+
+- The SQLite schema is identical — you can `cp data/cameras.db data/` and the Go
+  service will read it as-is.
+- All env-var names match (`SNAPSHOT_RETENTION_DAYS`, `TELEGRAM_BOT_TOKEN`, …).
+- `cameras.yaml` is unchanged in shape.
+- The HTTP API returns the same JSON contracts. Anything calling
+  `/api/cameras`, `/api/snapshots`, `/api/reviews/*`, `/api/videos/*` keeps working.
+- The only operational difference: the Python service needed `ffmpeg`, Python 3.11,
+  `pip install -r requirements.txt`, an APScheduler config file, and a separate
+  process per concern. The Go port collapses it all to one static binary.
+
+## Security notes
+
+- **`.env` is gitignored** — never commit it. Rotate any secret that has been pasted
+  into chat / a screenshot. The Telegram bot token and S3 access key grant real
+  access.
+- **HTTP basic auth** for ONVIF / snapshot URLs is passed in `cameras.yaml`. Treat
+  the YAML as a secret — it's typically readable by anyone with read access to the
+  project directory.
+- **Path traversal** in `/snapshots/*` and `/api/videos/download/{filename}` is
+  explicitly rejected (`..` segments, absolute paths).
+- **CORS is wide open** by default to match the legacy config. If you expose the
+  service beyond localhost, put a reverse proxy in front that tightens CORS and
+  adds TLS.
+- **The review API is unauthenticated.** Anyone with network access can confirm or
+  reject flags. Put the service behind a reverse proxy with auth if that's a
+  concern.
+- **Telegram chat ID** is a numeric ID, not a `@username`. Anyone with the chat ID
+  can read the channel but cannot post (only the bot can).
+
+## Contributing
+
+1. Fork & branch (`feat/<short-name>`, `fix/<short-name>`).
+2. Keep changes small and focused. One concern per commit.
+3. Follow the `AGENTS.md` rules — SOLID, conventional commits, zerolog, Google-style
+   doc comments, validation in handlers.
+4. Add or update tests for new behaviour. The `repository` and `domain` test patterns
+   are the templates.
+5. Run `make vet test fmt` before pushing. CI is not yet wired up; this is the
+   contract.
+6. Re-index codegraph after structural changes: `codegraph index .`.
+7. Open a PR with a clear "why" (the body of a conventional commit).
+
+Bug reports and feature requests are welcome — please include the OS, Go version,
+`make test` output, and a redacted `.env` if relevant.
+
+## License
+
+MIT. See `LICENSE` (add one if your fork needs a different license).
