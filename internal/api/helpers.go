@@ -138,8 +138,8 @@ func fileSizeMB(path string) string {
 	return strconv.FormatFloat(float64(info.Size())/(1024*1024), 'f', 1, 64)
 }
 
-// writeJSON serializes v as JSON with the given status code. Parity
-// with FastAPI's default JSONResponse behavior.
+// writeJSON serializes v as JSON with the given status code, mirroring
+// the API contract of the original implementation.
 //
 // Args:
 //
@@ -166,7 +166,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 // readJSON decodes a request body into v, reporting malformed JSON as
-// a 400. Parity with FastAPI's request validation.
+// a 400. Unknown fields are rejected.
 //
 // Args:
 //
@@ -186,7 +186,7 @@ func readJSON(r *http.Request, v any) error {
 }
 
 // pathInt64 parses a chi URL parameter as int64, writing a 400 on
-// failure (parity with FastAPI's path parameter typing).
+// failure.
 //
 // Args:
 //

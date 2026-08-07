@@ -1,13 +1,13 @@
-# Camera Monitor
+# Camera Monitor (Go)
 
-ONVIF-compatible camera snapshot monitoring system with local ML analysis. Periodically captures snapshots from IP cameras, runs YOLO object detection, flags unusual events for human review, and provides a web dashboard for visualization.
+ONVIF-compatible camera snapshot monitoring system with local ML analysis. Periodically captures snapshots from IP cameras, runs YOLO object detection, flags unusual events for human review, and provides a web dashboard for visualization. Single Go binary, feature-parity port of the original Python/FastAPI implementation.
 
 ## Features
 
-- **ONVIF auto-discovery** — connects to cameras via ONVIF protocol, fetches snapshot URIs
-- **Scheduled capture** — per-camera configurable interval via APScheduler (default 1 min)
+- **ONVIF client** — connects to cameras via ONVIF protocol, fetches snapshot URIs
+- **Scheduled capture** — per-camera configurable interval (default 1 min), restart-anchored timers
 - **Triple fallback capture** — direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile)
-- **ML object detection** — YOLO runs locally on every snapshot (graceful stub when `ultralytics` is not installed)
+- **ML object detection** — YOLO runs locally on every snapshot (graceful stub mode when the model is missing)
 - **Review rule engine** — auto-flags persons after hours, high crowd counts, unexpected objects
 - **Human review workflow** — API endpoints to list, confirm, or reject flagged snapshots
 - **Web dashboard** — view last snapshot, status, daily reports, and review badges for all cameras
@@ -15,23 +15,24 @@ ONVIF-compatible camera snapshot monitoring system with local ML analysis. Perio
 - **Telegram notifications** — get timelapse videos and download links sent to a chat
 - **S3-compatible storage** — upload large videos to Backblaze B2 or any S3-compatible provider
 - **YAML-based setup** — define cameras in `cameras.yaml`, seeded on startup
-- **Docker ready** — multi-stage Alpine build with ffmpeg, single `docker compose up`
+- **Docker ready** — multi-stage build (`scratch` default, `opencv` base adds ffmpeg)
 
 ## Quick start
 
 ```bash
-# Dev server
-uvicorn app.main:app --reload --port 8004
-
-# Or containerized
-docker compose up --build
+make run        # dev server on :8004, data dir ./data
+make build      # compile bin/cameras-go
+make test       # go test ./... -race -cover
+make vet        # go vet ./...
+make opencv     # build with native YOLO via gocv (-tags opencv)
+make docker     # docker build -t cameras-go .
 ```
 
 Open http://localhost:8004
 
 ## Configuration
 
-Set via environment variables or `.env` file:
+Set via environment variables or `.env` file at the working directory:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -43,10 +44,12 @@ Set via environment variables or `.env` file:
 | `SNAPSHOT_ZIP_AFTER_DAYS` | `7` | Zip raw snapshots older than this into daily archives |
 | `VIDEO_RETENTION_DAYS` | `30` | Auto-delete video archives older than this |
 | `DEFAULT_INTERVAL_SECONDS` | `60` | Default capture interval for new cameras |
+| `CAPTURE_TIMEOUT_SECONDS` | `30` | Timeout for a single capture attempt |
+| `HEALTH_CHECK_INTERVAL_MINUTES` | `10` | How often to health-check cameras |
 | `TIMEZONE` | `America/Mexico_City` | Timezone for cron triggers and timestamps |
 | `ANALYSIS_ENABLED` | `true` | Enable ML analysis pipeline |
 | `ANALYSIS_INTERVAL_SECONDS` | `30` | How often to poll for pending analysis jobs |
-| `YOLO_MODEL_PATH` | `yolov8n.pt` | Path to YOLO weights file |
+| `YOLO_MODEL_PATH` | `yolov8n.onnx` | Path to YOLO ONNX weights file |
 | `YOLO_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence for detection |
 | `REVIEW_PERSON_AFTER_HOUR` | `22` | Hour (0-23) after which persons trigger review |
 | `REVIEW_PERSON_BEFORE_HOUR` | `6` | Hour (0-23) before which persons trigger review |
@@ -56,7 +59,7 @@ Set via environment variables or `.env` file:
 | `TIMELAPSE_CAMERA_ID` | `6` | Camera ID for the daily annotated timelapse |
 | `TIMELAPSE_OBJECT_CLASSES` | `person,car,motorcycle` | Comma-separated classes to annotate |
 | `TIMELAPSE_FRAME_DURATION` | `0.55` | Seconds per frame in the annotated video |
-| `TIMELAPSE_WORKERS` | `3` | Parallel processes for frame annotation |
+| `TIMELAPSE_WORKERS` | `3` | Parallel workers for frame annotation |
 | `TELEGRAM_ENABLED` | `false` | Send Telegram notifications |
 | `TELEGRAM_BOT_TOKEN` | `""` | Telegram bot token |
 | `TELEGRAM_CHAT_ID` | `""` | Telegram chat ID |
@@ -98,9 +101,8 @@ This means cameras that don't support `GetSnapshotUri` (e.g. cheap NVRs, older m
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | Dashboard (HTML) |
-| `GET` | `/cameras` | Camera list (HTML) |
-| `GET` | `/report` | Daily report (HTML) |
+| `GET` | `/` | Dashboard (HTML, embedded SPA) |
+| `GET` | `/reviews` | Review workflow (HTML) |
 | `GET` | `/api/cameras` | List cameras |
 | `POST` | `/api/cameras` | Add camera |
 | `GET` | `/api/cameras/{id}` | Camera detail |
@@ -121,47 +123,33 @@ This means cameras that don't support `GetSnapshotUri` (e.g. cheap NVRs, older m
 | `POST` | `/api/retention/run` | Trigger the retention/archive cleanup job on demand |
 | `POST` | `/api/retention/purge` | Destructively purge snapshots/analyses/videos older than N days |
 | `POST` | `/api/videos/annotated` | Generate an annotated timelapse with YOLO detection overlays |
+| `GET` | `/healthz` | Health check |
 
 ## Architecture
 
 ```
-app/
-├── main.py              # FastAPI app + lifespan (init DB, seed, scheduler)
-├── core/                # config, database engine, UnitOfWork
-├── domain/              # SQLAlchemy models, Pydantic schemas
-├── application/         # services, repositories
-│   ├── services/
-│   │   ├── snapshot_service.py  # capture + reporting
-│   │   ├── camera_service.py    # camera CRUD
-│   │   ├── analysis_service.py  # ML analysis orchestrator
-│   │   └── retention_service.py # archive cleanup
-│   └── repositories/
-│       ├── camera.py
-│       ├── snapshot.py
-│       ├── analysis_job.py
-│       └── snapshot_analysis.py
+cmd/server/main.go            # wiring: config → DB → services → scheduler → HTTP
+internal/
+├── config/config.go          # caarlos0/env + .env loader
+├── database/database.go      # sqlx + pure-Go SQLite (WAL PRAGMAs), //go:embed schema.sql, legacy migrations
+├── domain/
+│   ├── models.go             # entities + SQLTime (SQLite text ↔ time, isoformat JSON)
+│   └── schemas.go            # request/response DTOs, Day (accepts "YYYY-MM-DD")
+├── repository/               # 4 repos over DBTX (*sqlx.DB or *sqlx.Tx)
+├── service/                  # camera, snapshot, analysis, retention, timelapse
 ├── infrastructure/
-│   ├── onvif.py          # ONVIFCameraClient
-│   ├── archive.py        # ZIP snapshot retriever
-│   ├── storage.py        # StorageProvider (Backblaze B2 / S3)
-│   ├── telegram.py       # TelegramNotifier (video reports)
-│   └── ml/
-│       ├── __init__.py
-│       └── yolo.py        # YOLODetector adapter
-├── api/                  # FastAPI routers + dependency injection
-│   └── routers/
-│       ├── cameras.py
-│       ├── snapshots.py
-│       ├── report.py
-│       ├── videos.py
-│       └── reviews.py     # review management endpoints
-├── web/                  # Jinja2 pages + static assets
-├── sql/schema.sql        # raw DDL run on startup
-├── scheduler.py          # APScheduler (capture + analysis + retention)
-└── seed.py               # YAML → DB seeder
+│   ├── onvif/onvif.go        # use-go/onvif adapter (namespace-agnostic XML parsing)
+│   ├── ml/                   # Detector interface; stub.go default; engine_opencv.go behind -tags opencv
+│   ├── telegram/notifier.go  # 50 MB cap + S3 fallback
+│   ├── storage/s3.go         # minio-go
+│   └── archive/archive.go    # ZIP reference "zip::filename" reader
+├── api/                      # chi router + handlers (validation lives here)
+├── scheduler/                # per-camera timers (restart-anchored) + robfig/cron jobs
+├── seed/seed.go              # YAML → DB idempotent sync
+└── web/static/               # embedded SPA (index.html, reviews.html, app.js, app.css)
 ```
 
-Data flow: routes → services (business logic) → repositories (data access). `UnitOfWork` wraps async SQLAlchemy sessions and exposes `.cameras`, `.snapshots`, `.analysis_jobs`, and `.snapshot_analyses` repositories.
+Data flow: handlers → services (business logic) → repositories (data access). No UnitOfWork: services open `*sqlx.Tx` and pass it to repos. All timestamps are stored as SQLite text (`YYYY-MM-DD HH:MM:SS`) in the project timezone and emitted as ISO-8601 in JSON.
 
 ## Analysis Pipeline
 
@@ -175,7 +163,7 @@ After each successful snapshot capture, an `analysis_job` is enqueued. A schedul
 3. **Result storage** — detection data, review flags, and anomaly scores are written to `snapshot_analyses`
 4. **Review surfacing** — flagged items appear in the dashboard manifest and the review API
 
-> The YOLO model is optional. When `ultralytics` is not installed, the detector runs in stub mode and returns empty results — the rest of the pipeline still operates without errors.
+> The YOLO model is optional. The default build ships with a stub detector (no OpenCV dependency) and returns empty results; build with `-tags opencv` for native inference over an ONNX export (see `scripts/export_yolo_onnx.py` to produce it from a `.pt` checkpoint). The rest of the pipeline operates without errors in either mode.
 
 ## Storage
 
@@ -184,8 +172,8 @@ After each successful snapshot capture, an `analysis_job` is enqueued. A schedul
 - `data/videos/*.mp4` — generated timelapse videos (raw)
 - `data/archives/snapshots/{camera_id}/{date}.zip` — zipped snapshots after `SNAPSHOT_ZIP_AFTER_DAYS`
 - `data/archives/videos/{camera_id}/{date}.zip` — zipped videos after the same threshold
-- `data/models/` — YOLO weights
-- `data/logs/` — daily rotating log files (zipped after 7 days)
+- `data/models/` — YOLO ONNX weights
+- `data/logs/` — daily rotating log files
 - `data/` is gitignored and mounted as a Docker volume
 
 ### Retention lifecycle (daily at 06:00, or via `POST /api/retention/run`)
@@ -193,12 +181,15 @@ After each successful snapshot capture, an `analysis_job` is enqueued. A schedul
 1. **Zip** — raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` (default 7) are compressed into per-camera/per-day ZIP archives under `data/archives/`; the raw file is deleted and the DB row gains an `archive_path` reference (`{zip}::{filename}`). Snapshots whose raw file is missing are marked with a `<missing>` sentinel so they aren't reprocessed.
 2. **Delete** — records and orphaned archives older than `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS` (default 30) are removed. A ZIP is only deleted once all snapshots referencing it are also expired.
 
-### Destructive purge (manual only via `fish run-purge.fish` or `POST /api/retention/purge`)
+Retention pauses capture/analysis jobs while running to avoid SQLite write contention.
+
+### Destructive purge (manual only via `POST /api/retention/purge`)
 
 Use this when you want to permanently delete data without archiving. Default is to keep the last 3 days.
 
 ```bash
-fish run-purge.fish 3   # keep last 3 days
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"days": 3}' http://localhost:8004/api/retention/purge
 ```
 
 This deletes raw snapshots, analysis records, analysis jobs, videos, and archives older than the given days. **No backups are created.**
@@ -210,162 +201,30 @@ A daily annotated MP4 is generated at `TIMELAPSE_HOUR:TIMELAPSE_MINUTE` for `TIM
 Run manually:
 
 ```bash
-fish run-timelapse.fish 5 2026-07-17
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"camera_id": 5, "date": "2026-07-17"}' http://localhost:8004/api/videos/annotated
 ```
 
-## Deployment
-
-### Option 1: Docker Compose (recommended)
+## Docker
 
 ```bash
-docker compose up --build -d
+make docker                                # scratch image (stub detector)
+docker build --build-arg BASE=opencv -t cameras-go .  # alpine + ffmpeg + OpenCV
+
+docker run -d --name cameras-go --restart unless-stopped \
+  -p 8004:8000 \
+  -v $PWD/data:/data \
+  -v $PWD/cameras.yaml:/cameras.yaml \
+  --env-file .env \
+  cameras-go
 ```
 
-The compose file includes `restart: unless-stopped`, so the container auto-starts on boot and restarts on failure.
-
-### Option 2: systemd service (bare metal)
-
-For production deployments without Docker, use the included systemd service. This runs the app on port **8002** with automatic startup and crash recovery.
-
-#### Prerequisites
-
-- Fish shell installed (`sudo apt install fish` or equivalent)
-- Python virtualenv at `.venv/` with dependencies installed
-- `.env` file configured (copy `.env.example` and adjust)
-
-#### Install
+## Development
 
 ```bash
-sudo fish manage-service.fish install
+make vet        # go vet ./...
+make test       # go test ./... -race -cover
+make opencv     # build with native YOLO via gocv (requires OpenCV dev headers)
 ```
 
-#### Manage
-
-```bash
-# Start the service
-sudo fish manage-service.fish start
-
-# Stop the service
-sudo fish manage-service.fish stop
-
-# Restart (after pulling new code)
-sudo fish manage-service.fish restart
-
-# Check status
-sudo fish manage-service.fish status
-
-# View live logs
-sudo fish manage-service.fish logs
-
-# Restart for development (reloads code changes, no sudo needed)
-fish startup.fish --restart
-
-# Uninstall (stop and remove the service)
-sudo fish manage-service.fish uninstall
-
-# Reinstall (fresh install)
-sudo fish manage-service.fish reinstall
-```
-
-### Scripts
-
-#### `manage-service.fish`
-
-All-in-one service manager. Must be run with `sudo` (except `logs` which can run without).
-
-```bash
-sudo fish manage-service.fish install     # Install and start
-sudo fish manage-service.fish start       # Start
-sudo fish manage-service.fish stop        # Stop
-sudo fish manage-service.fish restart     # Restart
-sudo fish manage-service.fish status      # Show status
-sudo fish manage-service.fish logs        # Follow live logs
-sudo fish manage-service.fish uninstall   # Remove service
-sudo fish manage-service.fish reinstall   # Fresh reinstall
-```
-
-| Script | Purpose | Port | Auto-restart |
-|---|---|---|---|---|
-| `manage-service.fish` | Full service manager — install, start, stop, restart, status, logs, uninstall | — | — |
-| `restart.fish` | Manual restart — kills existing process, starts fresh in background | 8002 | No (background via nohup) |
-| `startup.fish` | Systemd entrypoint with `--restart` for dev — prepares env, downloads model, execs uvicorn | 8002 | Yes (via `Restart=always`) |
-| `run-retention.fish` | Run retention cleanup manually — zips old files, deletes expired | — | — |
-| `run-purge.fish` | Destructively purge snapshots/analyses/videos older than N days | — | — |
-| `run-timelapse.fish` | Generate annotated timelapse on demand for a camera/date | — | — |
-
-#### `restart.fish`
-
-Use for manual restarts during development or when you need to kill and re-launch the server from a terminal.
-
-```bash
-fish restart.fish
-```
-
-- Kills any running `uvicorn app.main:app` process
-- Waits up to 5 seconds for port 8002 to free
-- Downloads YOLO model if missing
-- Generates dashboard manifest
-- Starts uvicorn in the background via `nohup`
-- Logs written to `/tmp/uvicorn.log`
-
-#### `startup.fish`
-
-Primary entrypoint for both systemd and development. Uses `exec` to replace the shell process with uvicorn, allowing systemd to track the process lifecycle.
-
-```bash
-# Normal start (systemd uses this)
-fish startup.fish
-
-# Restart for development (kills existing process, waits for port to free)
-fish startup.fish --restart
-```
-
-Modes:
-- **No flags** — clean start, assumes no existing process (used by systemd)
-- **`--restart`** — kills existing uvicorn, waits up to 5 seconds for port 8002 to free, then starts
-
-Key differences from `restart.fish`:
-- Uses `exec` instead of `nohup` (foreground process)
-- Resolves paths via `realpath` instead of `$PWD` (works from any working directory)
-- No background logging to `/tmp/uvicorn.log` (output goes to terminal or journal)
-
-#### `camera-monitor.service`
-
-Systemd unit file for production deployment. Features:
-
-- **Auto-start on boot** — `WantedBy=multi-user.target`
-- **Crash recovery** — `Restart=always` with 5-second delay
-- **Environment** — loads `.env` file, sets `PATH` to include virtualenv
-- **Logging** — stdout/stderr routed to systemd journal
-- **Network dependency** — waits for `network-online.target` before starting
-
-#### `run-retention.fish` (mandatory for manual runs)
-
-Run the retention/archive cleanup job manually. **Always use this script** instead of calling `POST /api/retention/run` directly — it pauses capture and analysis schedulers to avoid SQLite write contention, has a 30-minute timeout, and pretty-prints the result.
-
-```bash
-fish run-retention.fish
-```
-
-Equivalent to the daily 06:00 AM cron. Zips snapshots/videos older than `SNAPSHOT_ZIP_AFTER_DAYS` and deletes records past `SNAPSHOT_RETENTION_DAYS`.
-
-#### `run-purge.fish` (destructive)
-
-Permanently delete snapshots, analyses, videos, and archives older than N days **without creating ZIP archives**. Default is 3 days.
-
-```bash
-fish run-purge.fish      # keep last 3 days
-fish run-purge.fish 7    # keep last 7 days
-```
-
-The script pauses capture/analysis jobs, calls `POST /api/retention/purge`, and pretty-prints the result. There is a 3-second warning delay before the request is sent.
-
-#### `run-timelapse.fish`
-
-Generate an annotated timelapse on demand for a camera and date.
-
-```bash
-fish run-timelapse.fish                         # camera 6, yesterday, default classes
-fish run-timelapse.fish 5 2026-07-17            # camera 5, specific date
-fish run-timelapse.fish 5 2026-07-17 "person"   # custom classes
-```
+The repository is indexed by [codegraph](https://github.com/isink17/codegraph) — run `codegraph index .` after restructuring packages.

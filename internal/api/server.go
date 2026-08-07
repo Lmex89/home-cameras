@@ -109,7 +109,7 @@ func (s *Server) Router() http.Handler {
 }
 
 // requestLogger logs every request with status and latency (zerolog
-// wrapper around chi's middleware; parity with uvicorn access logs).
+// wrapper around chi's middleware).
 //
 // Args:
 //
