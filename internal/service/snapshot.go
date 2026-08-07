@@ -277,8 +277,9 @@ func (s *SnapshotService) fetchAndSave(ctx context.Context, cam domain.Camera, u
 }
 
 // captureRTSP grabs a single JPEG frame from the camera's RTSP stream
-// using ffmpeg. Stream URI resolution follows the legacy priority:
-// specific profile -> best resolution -> JPEG profile -> first profile.
+// using ffmpeg. Tries ONVIF stream resolution first, then falls back
+// to direct RTSP URL construction for cameras that don't support
+// ONVIF GetStreamUri (e.g., Tapo).
 //
 // Args:
 //
@@ -298,34 +299,39 @@ func (s *SnapshotService) captureRTSP(ctx context.Context, cam domain.Camera) ([
 
 	if cam.ProfileToken != nil && *cam.ProfileToken != "" {
 		if streamURI, err = s.onvif.GetStreamURI(cam.Host, cam.Port, cam.Username, cam.Password, *cam.ProfileToken); err != nil {
-			return nil, err
+			log.Debug().Err(err).Str("camera", cam.Name).Msg("ONVIF GetStreamURI failed, trying direct RTSP")
 		}
 	} else if streamURI, _, err = s.onvif.GetBestStreamURI(cam.Host, cam.Port, cam.Username, cam.Password); err != nil {
-		return nil, err
+		log.Debug().Err(err).Str("camera", cam.Name).Msg("ONVIF GetBestStreamURI failed, trying direct RTSP")
 	}
-	if streamURI == "" {
-		if streamURI, _, err = s.onvif.GetJPEGStreamURI(cam.Host, cam.Port, cam.Username, cam.Password); err != nil {
-			return nil, err
-		}
+
+	// Fall back to direct RTSP URL construction for cameras like Tapo
+	// that don't support ONVIF GetStreamUri.
+	var directFallback bool
+	if streamURI == "" || err != nil {
+		streamURI = fmt.Sprintf("rtsp://%s:%s@%s:554/stream1", cam.Username, cam.Password, cam.Host)
+		directFallback = true
+		log.Debug().Str("camera", cam.Name).Str("uri", streamURI).Msg("using direct RTSP URL")
 	}
-	if streamURI == "" {
-		if streamURI, err = s.onvif.GetFirstStreamURI(cam.Host, cam.Port, cam.Username, cam.Password); err != nil {
-			return nil, err
-		}
-	}
+
 	if streamURI == "" {
 		return nil, errors.New("no RTSP stream found")
 	}
 
-	authURI := s.onvif.BuildAuthURL(streamURI, cam.Username, cam.Password)
+	// Only add auth if not already embedded in direct fallback URL
+	authURI := streamURI
+	if !directFallback {
+		authURI = s.onvif.BuildAuthURL(streamURI, cam.Username, cam.Password)
+	}
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(cctx, "ffmpeg",
 		"-rtsp_transport", "tcp",
-		"-timeout", "10000000",
+		"-stimeout", "10000000",
 		"-i", authURI,
 		"-vframes", "1",
+		"-q:v", "1",
 		"-f", "image2pipe",
 		"-vcodec", "mjpeg",
 		"-",
