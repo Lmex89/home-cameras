@@ -2,6 +2,9 @@
 # The default image is pure Go (no CGO, no OpenCV) — the object
 # detector runs in stub mode. For native YOLO inference build with:
 #   docker build --build-arg BUILD_TAGS=opencv --build-arg BASE=opencv .
+# (the opencv build needs OpenCV dev headers in the builder, installed
+# from the distro package; the model itself is mounted at runtime, see
+# docker-compose.yml — export it locally first with `make model`).
 ARG BASE=alpine
 
 FROM golang:1.26-alpine AS builder
@@ -10,7 +13,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -tags "${BUILD_TAGS}" -ldflags="-s -w" -o /cameras ./cmd/server/
+RUN if [ -n "$BUILD_TAGS" ]; then \
+      apk add --no-cache build-base pkgconf opencv-dev; \
+      CGO_ENABLED=1 go build -tags "${BUILD_TAGS}" -ldflags="-s -w" -o /cameras ./cmd/server/; \
+    else \
+      CGO_ENABLED=0 go build -ldflags="-s -w" -o /cameras ./cmd/server/; \
+    fi
 
 # Runtime image: scratch for the default build (single static binary).
 FROM scratch AS runtime-default

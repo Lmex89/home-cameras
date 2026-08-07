@@ -303,7 +303,13 @@ func main() {
 	onvifClient := onvif.NewFromConfig(cfg)
 	detector := ml.NewDetector(cfg)
 	if !detector.Available() {
-		log.Warn().Msg("object detector unavailable; analysis will use stub mode")
+		if modelPath := ml.ModelPath(cfg); modelPath == "" {
+			log.Warn().Str("model_path", cfg.YoloModelPath).
+				Msg("object detector unavailable; analysis will use stub mode: no usable model found (gocv reads ONNX, not .pt — run 'make model' to download and export it)")
+		} else {
+			log.Warn().Str("model_path", modelPath).
+				Msg("object detector unavailable; analysis will use stub mode: binary not built with the opencv tag (rebuild with 'make opencv')")
+		}
 	}
 	archiveReader := archive.New(cfg)
 	notifier := telegram.New(cfg)

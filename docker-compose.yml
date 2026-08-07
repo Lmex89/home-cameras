@@ -1,0 +1,32 @@
+# Camera monitor — docker-compose service.
+#
+# Default: builds the opencv image (native gocv YOLO + ffmpeg) and runs
+# the service on PORT from .env (default 8004). The YOLO model is the
+# opset-11 export from `make model` mounted at /models.
+#
+# To run the stub (no OpenCV) build instead:
+#   docker compose build --build-arg BUILD_TAGS= cameras
+services:
+  cameras:
+    build:
+      context: .
+      args:
+        BASE: alpine
+        BUILD_TAGS: opencv
+    image: cameras-go:latest
+    container_name: cameras-go
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8004}:${PORT:-8004}"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+      - ./cameras.yaml:/cameras.yaml:ro
+      - ./models:/models:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:${PORT:-8004}/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

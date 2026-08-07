@@ -11,7 +11,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rs/zerolog v1.35.1
 	github.com/use-go/onvif v0.0.9
-	gocv.io/x/gocv v0.43.0
+	gocv.io/x/gocv v0.32.0
 	golang.org/x/image v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.56.0

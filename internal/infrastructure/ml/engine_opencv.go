@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"image"
-	"os"
-	"path/filepath"
 
 	"gocv.io/x/gocv"
 
@@ -59,20 +57,9 @@ const (
 // newGOCVEngine loads the ONNX YOLO model; falls back to the stub when
 // the model file is missing or loading fails.
 func newGOCVEngine(cfg config.Config) Detector {
-	modelPath := cfg.YoloModelPath
-	if !filepath.IsAbs(modelPath) {
-		modelPath = filepath.Join(cfg.BaseDir(), modelPath)
-	}
-	if _, err := os.Stat(modelPath); err != nil {
-		base := modelPath
-		if ext := filepath.Ext(base); ext != "" {
-			base = base[:len(base)-len(ext)]
-		}
-		if _, err := os.Stat(base + ".onnx"); err == nil {
-			modelPath = base + ".onnx"
-		} else {
-			return stubDetector{}
-		}
+	modelPath := ModelPath(cfg)
+	if modelPath == "" {
+		return stubDetector{}
 	}
 	net := gocv.ReadNet(modelPath, "")
 	if net.Empty() {
@@ -91,7 +78,7 @@ func newGOCVEngine(cfg config.Config) Detector {
 }
 
 // Available reports whether the model is loaded.
-func (d *gocvDetector) Available() bool { return d.net != nil && !d.net.Empty() }
+func (d *gocvDetector) Available() bool { return !d.net.Empty() }
 
 // Detect runs ONNX inference and parses YOLOv8 outputs.
 func (d *gocvDetector) Detect(ctx context.Context, imagePath string) ([]domain.Detection, error) {

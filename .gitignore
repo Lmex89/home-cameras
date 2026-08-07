@@ -6,6 +6,8 @@ __pycache__/
 venv/
 .env
 data/
+models/
+bin/
 *.db
 .DS_Store
 .vscode/

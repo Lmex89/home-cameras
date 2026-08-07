@@ -97,30 +97,40 @@ $EDITOR cameras.yaml .env
 ### 3. Run
 
 ```bash
-make run                         # builds and launches on :8004
+make run                         # ensures requirements, builds and launches on :8004
 # or
 make build && ./bin/cameras-go
 ```
 
 Open <http://localhost:8004> — the dashboard is served from the same binary.
 
-### 4. (Optional) Install a YOLO model
+`make run` first runs `make requirements`, which:
+
+- downloads the YOLOv8 ONNX model into `models/` when missing,
+- verifies `ffmpeg` is on `$PATH`,
+- checks for OpenCV dev headers — when present, the gocv engine is compiled in and
+  detection runs natively; otherwise the binary builds with the stub detector and a
+  warning explains how to install OpenCV.
+
+### 4. (Optional) Enable real YOLO detection
 
 The default build uses a **stub detector** that records empty analyses. To get real
-detections, build with native OpenCV inference and drop a YOLOv8 model next to the
-binary:
+detections, install OpenCV once and rebuild with the gocv engine:
 
 ```bash
-# Export from a .pt checkpoint (Python venv, one-time)
-python scripts/export_yolo_onnx.py yolov8n.pt models/
-# or download a pretrained ONNX directly.
+# One-time: install OpenCV dev headers (Debian/Ubuntu; macOS: brew install opencv)
+sudo apt install -y libopencv-dev pkg-config
 
-# Build with the gocv YOLO engine
-make opencv                      # produces bin/cameras-go with -tags opencv
+# Download the model (or use scripts/export_yolo_onnx.py yolov8n.pt models/)
+make model
 
-# Point the config at the model
-echo 'YOLO_MODEL_PATH=models/yolov8n.onnx' >> .env
+# Build with the gocv YOLO engine and run
+make opencv
+./bin/cameras-go
 ```
+
+`make requirements` (run automatically by `make run`) prints the same checklist and
+can be re-run anytime to verify the setup.
 
 ### 5. Verify
 
@@ -235,7 +245,7 @@ are the Telegram bot token / chat ID and S3 keys *if* you enable those integrati
 | --- | --- | --- |
 | `ANALYSIS_ENABLED` | `true` | Master switch for the analysis pipeline. |
 | `ANALYSIS_INTERVAL_SECONDS` | `30` | Polling frequency for pending `analysis_jobs`. |
-| `YOLO_MODEL_PATH` | `models/yolov8n.pt` | Path to the model. `.pt` works with the opencv engine; `.onnx` works with `scripts/export_yolo_onnx.py`. |
+| `YOLO_MODEL_PATH` | `models/yolov8n.pt` | Path to the model. `.pt` works with the opencv engine; `.onnx` works with `scripts/export_yolo_onnx.py`. `make model` downloads the `.onnx` next to it. |
 | `YOLO_CONFIDENCE_THRESHOLD` | `0.5` | Minimum confidence to record a detection. |
 | `REVIEW_PERSON_AFTER_HOUR` | `22` | Person detections **after** this hour (24h) are flagged. |
 | `REVIEW_PERSON_BEFORE_HOUR` | `6` | Person detections **before** this hour (24h) are flagged. |
@@ -609,9 +619,11 @@ they need atomicity.
 ### Prerequisites
 
 - **Go 1.26+** (`go version` to check).
-- **`ffmpeg`** on `$PATH` (for RTSP capture and timelapse assembly).
+- **`ffmpeg`** on `$PATH` (for RTSP capture and timelapse assembly). `make requirements`
+  checks for it on every start.
 - (Optional) **OpenCV dev headers** for the gocv engine — `apt install libopencv-dev`
-  on Debian/Ubuntu, `brew install opencv` on macOS.
+  on Debian/Ubuntu, `brew install opencv` on macOS. `make requirements` reports when
+  they're missing (stub detector until installed).
 - (Optional) **`air`** for live reload: `go install github.com/air-verse/air@latest`.
 - (Optional) **`codegraph`** for code intelligence (used by the `AGENTS.md`
   instructions): `go install github.com/isink17/codegraph/cmd/codegraph@latest`.
@@ -621,12 +633,14 @@ they need atomicity.
 | Target | Command | Notes |
 | --- | --- | --- |
 | Default binary | `make build` | `bin/cameras-go`, no CGO, stub detector. |
-| Run locally | `make run` | Builds + runs against `./data`. |
-| Live reload | `make dev` | Wraps `air` (live reload). |
+| Run locally | `make run` | Ensures requirements (model download, ffmpeg/OpenCV check), builds (gocv engine when OpenCV is installed) and runs against `./data`. |
+| Check requirements | `make requirements` | Downloads the YOLO model when missing, verifies `ffmpeg` and OpenCV headers, prints install steps. |
+| Fetch YOLO model | `make model` | Downloads `models/yolov8n.onnx` (official ultralytics asset) unless already present. |
+| Live reload | `make dev` | Wraps `air` (live reload), also ensures requirements. |
 | Format | `make fmt` | `gofmt -w cmd internal`. |
 | Vet | `make vet` | `go vet ./...`. |
 | Tests | `make test` | `go test ./... -race -cover`. |
-| gocv build | `make opencv` | `CGO_ENABLED=1 go build -tags opencv`. Requires OpenCV. |
+| gocv build | `make opencv` | `CGO_ENABLED=1 go build -tags opencv`. Requires OpenCV (fails fast with install steps). |
 | Docker image | `make docker` | Multi-stage, `scratch` runtime by default. |
 | Clean | `make clean` | `rm -rf bin`. |
 
@@ -688,7 +702,7 @@ The `Dockerfile` is multi-stage with two runtime targets selected by `--build-ar
 | --- | --- | --- |
 | Default (stub) | `make docker` | `FROM scratch` — single static binary, ~25 MB. |
 | With ffmpeg | `docker build --build-arg BASE=opencv -t cameras-go .` | `FROM alpine` + ffmpeg + ca-certs. |
-| With OpenCV (gocv YOLO) | `docker build --build-arg BUILD_TAGS=opencv --build-arg BASE=opencv -t cameras-go .` | Adds native gocv; ~150 MB. |
+| With OpenCV (gocv YOLO) | `docker build --build-arg BUILD_TAGS=opencv --build-arg BASE=opencv -t cameras-go .` | Adds native gocv + baked-in `models/yolov8n.onnx`; ~150 MB. |
 
 Run:
 
@@ -770,9 +784,16 @@ retention, but if you see this during normal operation you can:
 
 ### "object detector unavailable" in logs
 
-Expected when no model is configured. Build with `make opencv`, drop a `.onnx` file at
-`YOLO_MODEL_PATH`, and restart. Without a model, the pipeline still records empty
-analyses — flagged items just won't have detections to base rules on.
+Two causes, both reported with a hint at startup:
+
+- **Model file missing** — run `make model` (or `make requirements`) to download
+  `models/yolov8n.onnx`, or export your own with
+  `python scripts/export_yolo_onnx.py yolov8n.pt models/`.
+- **Binary built without gocv** — rebuild with `make opencv` (needs OpenCV dev
+  headers; `make requirements` prints the exact install command for your OS).
+
+Without a model, the pipeline still records empty analyses — flagged items just won't
+have detections to base rules on.
 
 ### Timelapse video is huge / takes forever to render
 

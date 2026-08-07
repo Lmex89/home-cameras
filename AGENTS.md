@@ -25,6 +25,25 @@ make docker     # docker build -t cameras-go .
 
 Open http://localhost:8004
 
+## Service control (cameras.fish)
+
+`./cameras.fish` is the all-in-one dev control script (fish). It resolves the
+project root from its own location, so it runs from any directory. Requires
+fish 3.2+ and the same deps as `make run`.
+
+| Command | What it does |
+|---|---|
+| `./cameras.fish start` | Runs `make requirements` (model download + ffmpeg/OpenCV checks), builds (gocv engine when `pkg-config opencv4` exists, stub otherwise), launches `bin/cameras-go` with `nohup` in the background, writes `data/cameras.pid`. |
+| `./cameras.fish stop` | SIGTERM + 5 s grace, then SIGKILL; removes the PID file. |
+| `./cameras.fish restart` | `stop` + `start`. |
+| `./cameras.fish status` | PID, RSS memory, uptime, `/healthz` probe, and detector mode (grep of the console log for the stub warning). |
+| `./cameras.fish logs` | `tail -f` of `data/logs/console.log`. |
+
+State artifacts: `data/cameras.pid`, `data/logs/console.log` (both gitignored
+under `data/`). Log lines are `[YYYY-MM-DD HH:MM:SS] LEVEL message`. Every
+function carries a Google-style docstring (`Args:` / `Returns:` / `Raises:`),
+mirroring the Go doc convention in this repo — keep it that way when editing.
+
 ## Architecture
 
 ```

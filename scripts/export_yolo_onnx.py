@@ -10,6 +10,10 @@ The exporter keeps the default ultralytics layout (transpose disabled)
 so the output tensor is 1x84x8400 in NCHW order, which the Go parser
 expects. The resulting file should be placed next to the .pt weights
 (e.g. models/yolov8n.onnx) or the path set via YOLO_MODEL_PATH.
+
+Default opset is 11: OpenCV < 4.8 (e.g. Ubuntu 22.04's 4.5.4) cannot
+parse the opset 17+ exports newer ultralytics produces by default and
+aborts at inference time. Raise --opset if your OpenCV supports it.
 """
 
 import argparse
@@ -32,6 +36,13 @@ def main() -> int:
         help="Output directory (default: same directory as the weights)",
     )
     parser.add_argument("--imgsz", type=int, default=640, help="Input size (default: 640)")
+    parser.add_argument("--opset", type=int, default=11, help="ONNX opset (default: 11)")
+    parser.add_argument(
+        "--simplify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Constant-fold the graph with onnxslim (default: enabled)",
+    )
     args = parser.parse_args()
 
     try:
@@ -51,7 +62,10 @@ def main() -> int:
     model = YOLO(str(model_path))
     # transpose stays False (default) so the Go parser can index the
     # NCHW 1x84x8400 tensor directly.
-    exported = model.export(format="onnx", imgsz=args.imgsz, half=False)
+    exported = model.export(
+        format="onnx", imgsz=args.imgsz, half=False,
+        opset=args.opset, simplify=args.simplify,
+    )
     print(f"Exported ONNX model: {exported}")
     return 0
 
