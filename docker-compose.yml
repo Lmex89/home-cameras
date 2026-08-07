@@ -7,6 +7,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./cameras.yaml:/app/cameras.yaml:ro
+      - ./models:/app/models:ro
     environment:
       - APP_NAME=Camera Monitor
       - DEBUG=true
@@ -16,4 +17,12 @@ services:
       - SNAPSHOT_ZIP_AFTER_DAYS=7
       - VIDEO_RETENTION_DAYS=30
       - DEFAULT_INTERVAL_SECONDS=60
+      # ML Analysis
+      - ANALYSIS_ENABLED=true
+      - ANALYSIS_INTERVAL_SECONDS=30
+      - YOLO_MODEL_PATH=/app/models/yolov8n.pt
+      - YOLO_CONFIDENCE_THRESHOLD=0.5
+      - REVIEW_PERSON_AFTER_HOUR=22
+      - REVIEW_PERSON_BEFORE_HOUR=6
+      - REVIEW_MAX_PERSON_COUNT=5
     restart: unless-stopped

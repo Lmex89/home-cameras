@@ -1,10 +1,49 @@
 # Cameras — ONVIF snapshot monitor
 
+## 🔴 ABSOLUTE: Codegraph-only lookup
+
+You MUST use codegraph_* tools (codegraph_find_symbol, codegraph_context_for_task, etc.) for ALL code search and navigation.
+
+**NEVER use `glob`, `grep`, or `read` for code lookup.** Codegraph tools are the ONLY permitted approach. Built-in tools are ONLY permitted when a codegraph tool returns no useful results, as a strictly last resort.
+
 ## Quick start
 
 ```bash
 uvicorn app.main:app --reload --port 8004  # dev server
 docker compose up --build                  # containerized
+```
+
+## Service management
+
+For production deployments on bare metal, use the systemd service scripts:
+
+```bash
+# Install and enable auto-start on boot
+sudo fish manage-service.fish install
+
+# Start / stop / restart
+sudo fish manage-service.fish start
+sudo fish manage-service.fish stop
+sudo fish manage-service.fish restart
+
+# Check status and logs
+sudo fish manage-service.fish status
+sudo fish manage-service.fish logs
+
+# Development restart (no sudo, reloads code changes)
+fish startup.fish --restart
+
+# Run retention cleanup manually (MANDATORY command)
+# Always use this script for manual retention; it pauses capture/analysis
+# jobs to avoid SQLite lock contention and reports the result correctly.
+fish run-retention.fish
+
+# Purge snapshots/analyses/videos older than N days (DESTRUCTIVE)
+# Default keeps last 3 days. Use with caution — no archives are created.
+fish run-purge.fish
+
+# Uninstall
+sudo fish manage-service.fish uninstall
 ```
 
 ## Architecture
@@ -15,33 +54,69 @@ app/
 ├── core/                # config, database engine, UnitOfWork
 ├── domain/              # SQLAlchemy models, Pydantic schemas
 ├── application/         # services, repositories
-├── infrastructure/      # ONVIFCameraClient (onvif-python wrapper)
-├── api/                 # FastAPI routers + dependency injection
-├── web/                 # Jinja2 pages + static assets
-├── sql/schema.sql       # raw DDL run on startup
-├── scheduler.py         # APScheduler per-camera interval jobs
-└── seed.py              # YAML → DB seeder
+│   ├── services/
+│   │   ├── snapshot_service.py  # capture + reporting
+│   │   ├── camera_service.py    # camera CRUD
+│   │   ├── analysis_service.py  # ML analysis orchestrator
+│   │   └── retention_service.py # archive cleanup
+│   └── repositories/
+│       ├── camera.py
+│       ├── snapshot.py
+│       ├── analysis_job.py
+│       └── snapshot_analysis.py
+├── infrastructure/
+│   ├── onvif.py          # ONVIFCameraClient
+│   ├── archive.py        # ZIP snapshot retriever
+│   ├── storage.py        # StorageProvider (Backblaze B2 / S3)
+│   ├── telegram.py       # TelegramNotifier (video reports)
+│   └── ml/
+│       ├── __init__.py
+│       └── yolo.py        # YOLODetector adapter
+├── api/                  # FastAPI routers + dependency injection
+│   └── routers/
+│       ├── cameras.py
+│       ├── snapshots.py
+│       ├── report.py
+│       ├── videos.py
+│       └── reviews.py     # review management endpoints
+├── web/                  # Jinja2 pages + static assets
+├── sql/schema.sql        # raw DDL run on startup
+├── scheduler.py          # APScheduler (capture + analysis + retention)
+└── seed.py               # YAML → DB seeder
 ```
 
-DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWork` wraps an async SQLAlchemy session and exposes `.cameras` and `.snapshots` repos.
+DDD-lite: routes → services (contain logic) → repos (data access). `UnitOfWork` wraps an async SQLAlchemy session and exposes `.cameras`, `.snapshots`, `.analysis_jobs`, and `.snapshot_analyses` repos.
 
 ## Key flows
 
 | Step | What happens |
 |---|---|
 | Startup | `lifespan` → init DB from `sql/schema.sql` → seed from `cameras.yaml` → start APScheduler |
-| Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg (auto-selects best profile) → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
-| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db` and `snapshots/`. |
+| Snapshots | `scheduler` calls `capture_job` → `SnapshotService.capture()` tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HM.jpg` |
+| Analysis  | After each successful capture, `AnalysisService.analyze_snapshot()` enqueues an `analysis_job`. A separate scheduler poll (every 30s) processes pending jobs via `process_next_batch()`. |
+| Review    | `AnalysisService._apply_review_rules()` flags snapshots for human review (person after hours, high count, unexpected objects). Review items surface in the manifest and `/api/reviews/pending` endpoint. |
+| Retention | Daily 06:00 cron (`schedule_retention`) → `RetentionService.run()`: zips raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` into `data/archives/`, then deletes records/archives past `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS`. Also triggerable on demand via `POST /api/retention/run`. |
+| Purge     | Manual destructive cleanup via `POST /api/retention/purge` or `fish run-purge.fish`. Deletes raw snapshots, analyses, jobs, videos, and archives older than `days` **without** creating archives. |
+| Timelapse | Daily 21:00 cron (`schedule_timelapse`) generates an annotated MP4 for the configured camera using YOLO detections; manual runs via `fish run-timelapse.fish`. Videos are uploaded to Backblaze B2 and notified via Telegram. |
+| Telegram  | After each timelapse video is saved (scheduled job or manual ``POST /api/videos/annotated``), ``TelegramNotifier.send_video()`` sends the MP4 directly to the configured Telegram chat. Fallback to text+URL if the video exceeds 50 MB. |
+| Data dirs | `data/` is gitignored, mounted as Docker volume. Contains `cameras.db`, `snapshots/` (raw), `videos/` (raw), `archives/` (zipped), `models/`, and `logs/`. |
 
 ## Config
 
 Env vars (via `pydantic-settings`, reads `.env`):
 
-- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `SNAPSHOT_RETENTION_DAYS`, `DEFAULT_INTERVAL_MINUTES`
+- `APP_NAME`, `DEBUG`, `HOST`, `PORT`, `TIMEZONE`, `SNAPSHOT_RETENTION_DAYS`, `SNAPSHOT_ZIP_AFTER_DAYS`, `VIDEO_RETENTION_DAYS`, `DEFAULT_INTERVAL_SECONDS`
+- `ANALYSIS_ENABLED`, `ANALYSIS_INTERVAL_SECONDS`, `YOLO_MODEL_PATH`, `YOLO_CONFIDENCE_THRESHOLD`
+- `REVIEW_PERSON_AFTER_HOUR`, `REVIEW_PERSON_BEFORE_HOUR`, `REVIEW_MAX_PERSON_COUNT`
+- `TELEGRAM_ENABLED`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- `TIMELAPSE_HOUR`, `TIMELAPSE_MINUTE`, `TIMELAPSE_CAMERA_ID`, `TIMELAPSE_OBJECT_CLASSES`, `TIMELAPSE_FRAME_DURATION`, `TIMELAPSE_WORKERS`
+- `STORAGE_ENABLED`, `STORAGE_ENDPOINT_URL`, `STORAGE_BUCKET_NAME`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_PUBLIC_URL`, `STORAGE_REGION`
 
 ## Docker
 
 Multi-stage Alpine build. Includes `ffmpeg` for RTSP snapshot fallback. `docker-compose.yml` mounts `data/` and `cameras.yaml`. App user is `appuser` (UID not fixed).
+
+For GPU-accelerated ML inference, a separate worker image based on `nvidia/cuda` is planned.
 
 ## Dependencies
 
@@ -49,6 +124,39 @@ Multi-stage Alpine build. Includes `ffmpeg` for RTSP snapshot fallback. `docker-
 - onvif-python, httpx (for snapshot fetch)
 - APScheduler (async), PyYAML, pydantic-settings
 - ffmpeg (RTSP frame grab fallback)
+- python-telegram-bot (Telegram video report notifications)
+- ultralytics (YOLO inference, graceful stub mode when missing)
+
+## Codegraph (code context engine)
+
+A local-first code context engine that builds a persistent knowledge graph in SQLite
+for AI coding assistants. Provides symbol lookup, call graph traversal, impact
+analysis, and semantic search — zero cloud dependencies.
+
+### Setup
+
+```bash
+# Install (requires Go 1.23+ and a C compiler)
+go install github.com/isink17/codegraph/cmd/codegraph@latest
+
+# Re-index after code changes
+export PATH="$PATH:$(go env GOPATH)/bin"
+codegraph index .
+```
+
+### Usage
+
+The MCP server is configured in `.mcp.json` and starts automatically with OpenCode.
+Manual CLI queries:
+
+```bash
+codegraph find-symbol . "<query>"     # Find symbols by name
+codegraph callers . --symbol "<name>" # Find callers of a function
+codegraph callees . --symbol "<name>" # Find callees of a function
+codegraph impact . --symbol "<name>"  # Impact analysis
+codegraph search . "<query>"          # Full-text symbol search
+codegraph stats .                     # Graph statistics
+```
 
 ## Mandatory: SOLID principles
 

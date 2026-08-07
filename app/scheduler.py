@@ -5,9 +5,18 @@ and reschedule per-camera capture jobs at fixed intervals, as well
 as a daily retention cleanup job.
 """
 
-from datetime import datetime
+import asyncio
+import shutil
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from loguru import logger
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+    JobExecutionEvent,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -16,9 +25,86 @@ from app.core.config import settings
 from app.core.database import session_factory
 from app.core.unit_of_work import UnitOfWork
 from app.infrastructure.onvif import ONVIFCameraClient
+from app.infrastructure.telegram import TelegramNotifier
 from app.application.services.snapshot_service import SnapshotService
 
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
+
+_ALARM_EVENT_NAMES = {
+    EVENT_JOB_ERROR: "ERROR",
+    EVENT_JOB_MISSED: "MISSED",
+    EVENT_JOB_MAX_INSTANCES: "MAX_INSTANCES",
+}
+
+
+def _send_alarm_sync(msg: str) -> None:
+    """Send a Telegram message synchronously for alarm events.
+
+    Uses a direct HTTP POST to the Telegram Bot API so the message is
+    guaranteed to be sent before the listener returns, avoiding the
+    fire-and-forget ``asyncio.ensure_future`` pitfall that silently
+    dropped messages when the event loop was under pressure.
+
+    Args:
+        msg: The alarm message text to send.
+    """
+    import httpx
+
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_chat_id
+    if not settings.telegram_enabled or not token or not chat_id:
+        logger.debug(f"Telegram disabled; would send alarm: {msg[:80]}…")
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(url, json={"chat_id": chat_id, "text": msg})
+            resp.raise_for_status()
+        logger.info(f"Alarm notification sent to Telegram ({len(msg)} chars)")
+    except Exception:
+        logger.exception("Failed to send alarm notification to Telegram")
+
+
+def _alarm_listener(event: JobExecutionEvent) -> None:
+    """Listen for scheduler job failures and send Telegram alerts.
+
+    Triggered when a scheduled job errors, is missed, or hits max instances.
+    Sends a notification via Telegram so the operator is alerted immediately.
+
+    Args:
+        event: The APScheduler job execution event.
+    """
+    event_name = _ALARM_EVENT_NAMES.get(event.code, f"UNKNOWN({event.code})")
+    job_id = event.job_id
+    scheduled = event.scheduled_run_time.isoformat() if event.scheduled_run_time else "N/A"
+
+    logger.error(
+        f"ALARM: Job '{job_id}' {event_name} "
+        f"(scheduled: {scheduled})"
+    )
+
+    if event.exception:
+        logger.error(f"ALARM exception: {event.exception}")
+    if event.traceback:
+        logger.error(f"ALARM traceback: {event.traceback[:500]}")
+
+    msg = (
+        f"Camera Monitor ALARM\n"
+        f"Event: {event_name}\n"
+        f"Job: {job_id}\n"
+        f"Scheduled: {scheduled}\n"
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    if event.exception:
+        msg += f"\nError: {str(event.exception)[:200]}"
+
+    _send_alarm_sync(msg)
+
+
+scheduler.add_listener(
+    _alarm_listener,
+    EVENT_JOB_ERROR | EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES,
+)
 
 
 async def capture_job(camera_id: int) -> None:
@@ -37,9 +123,17 @@ async def capture_job(camera_id: int) -> None:
         onvif = ONVIFCameraClient()
         service = SnapshotService(uow, onvif)
         try:
-            snapshot = await service.capture(camera)
+            snapshot = await asyncio.wait_for(
+                service.capture(camera),
+                timeout=settings.capture_timeout_seconds,
+            )
             status = "ok" if snapshot.status == "success" else "error"
             logger.info(f"Camera {camera.name} ({camera.host}): snapshot {status}")
+        except TimeoutError:
+            logger.error(
+                f"Camera {camera.name} ({camera.host}): capture timed out "
+                f"after {settings.capture_timeout_seconds}s"
+            )
         except Exception:
             logger.exception(f"Camera {camera.name}: capture failed")
 
@@ -116,21 +210,183 @@ async def load_schedule() -> None:
 
 
 async def retention_job() -> None:
-    """Run daily retention cleanup (zip old files, delete expired)."""
-    async with UnitOfWork(session_factory) as uow:
-        from app.application.services.retention_service import RetentionService
-        service = RetentionService(uow)
-        result = await service.run()
-        logger.info(f"Retention job complete: {result}")
+    """Run daily retention cleanup (zip old files, delete expired).
+
+    Pauses capture and analysis jobs during retention to avoid SQLite
+    write contention — only one writer is allowed at a time.
+    """
+    logger.info("Retention job: pausing capture/analysis schedulers")
+    capture_ids = [j.id for j in scheduler.get_jobs() if j.id.startswith("capture_")]
+    analysis_id = "analysis_processing"
+    for jid in capture_ids:
+        scheduler.pause_job(jid)
+    scheduler.pause_job(analysis_id)
+
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            from app.application.services.retention_service import RetentionService
+            service = RetentionService(uow)
+            result = await service.run()
+            logger.info(f"Retention job complete: {result}")
+    except Exception:
+        logger.exception("Retention job failed")
+    finally:
+        logger.info("Retention job: resuming capture/analysis schedulers")
+        for jid in capture_ids:
+            scheduler.resume_job(jid)
+        scheduler.resume_job(analysis_id)
+
+
+async def analysis_job() -> None:
+    """Process pending analysis jobs from the queue."""
+    logger.debug("analysis_job fired")
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            from app.application.services.analysis_service import AnalysisService
+            service = AnalysisService(uow)
+            processed = await service.process_next_batch(limit=5)
+            if processed:
+                logger.info(f"Analysis batch processed: {processed} jobs")
+            else:
+                logger.debug("Analysis batch: no pending jobs")
+    except Exception:
+        logger.exception("Analysis job failed")
+
+
+def schedule_analysis() -> None:
+    """Schedule periodic analysis job processing."""
+    scheduler.add_job(
+        analysis_job,
+        trigger=IntervalTrigger(seconds=settings.analysis_interval_seconds),
+        id="analysis_processing",
+        replace_existing=True,
+        name="Analysis job processing",
+    )
+    logger.info(f"Scheduled analysis processing every {settings.analysis_interval_seconds}s")
 
 
 def schedule_retention() -> None:
-    """Schedule the daily retention cleanup job at 03:00."""
+    """Schedule the daily retention cleanup job at 06:00 local time."""
     scheduler.add_job(
         retention_job,
-        trigger=CronTrigger(hour=3, minute=0),
+        trigger=CronTrigger(hour=6, minute=0, timezone=ZoneInfo(settings.timezone)),
         id="retention_cleanup",
         replace_existing=True,
         name="Daily retention cleanup",
     )
-    logger.info("Scheduled daily retention cleanup at 03:00")
+    logger.info("Scheduled daily retention cleanup at 06:00 (local time)")
+
+
+async def timelapse_job() -> None:
+    """Generate the daily annotated timelapse for the previous day."""
+    yesterday = date.today() - timedelta(days=1)
+    camera_id = settings.timelapse_camera_id
+    logger.info(f"Timelapse job: generating annotated timelapse for camera {camera_id} on {yesterday}")
+    camera_name = str(camera_id)
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            camera = await uow.cameras.get_by_id(camera_id)
+            if camera:
+                camera_name = camera.name
+            from app.application.services.timelapse_service import TimelapseService
+            svc = TimelapseService(uow)
+            output_path, temp_dir = await svc.generate_annotated_timelapse(camera_id, yesterday)
+        vdir = settings.videos_dir
+        vdir.mkdir(parents=True, exist_ok=True)
+        persistent = vdir / f"timelapse_annotated_{camera_id}_{yesterday.isoformat()}.mp4"
+        shutil.move(str(output_path), str(persistent))
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.info(f"Annotated timelapse saved: {persistent}")
+
+        from app.infrastructure.storage import StorageProvider
+        storage = StorageProvider.from_settings()
+        blaze_url = await storage.upload(persistent) if storage else None
+
+        size_mb = persistent.stat().st_size / (1024 * 1024)
+        caption = f"\U0001f3a5 Camera {camera_name} — timelapse {yesterday.isoformat()} (annotated, {size_mb:.1f} MB)"
+        notifier = TelegramNotifier.from_settings()
+        await notifier.send_video(
+            persistent,
+            caption=caption,
+            fallback_url=f"http://localhost:{settings.port}/api/videos/download/{persistent.name}",
+            public_url=blaze_url,
+        )
+    except Exception:
+        logger.exception(f"Timelapse job failed for camera {camera_id} on {yesterday}")
+
+
+def schedule_timelapse() -> None:
+    """Schedule the daily annotated timelapse generation job."""
+    if not settings.timelapse_enabled:
+        logger.info("Timelapse generation disabled via TIMELAPSE_ENABLED=false")
+        return
+    scheduler.add_job(
+        timelapse_job,
+        trigger=CronTrigger(
+            hour=settings.timelapse_hour,
+            minute=settings.timelapse_minute,
+            timezone=ZoneInfo(settings.timezone),
+        ),
+        id="timelapse_generation",
+        replace_existing=True,
+        name="Daily annotated timelapse generation",
+    )
+    logger.info(f"Scheduled daily annotated timelapse at {settings.timelapse_hour:02d}:{settings.timelapse_minute:02d} (local time)")
+
+
+async def health_check_job() -> None:
+    """Periodic self-check: verify snapshots are being captured on schedule.
+
+    Queries the database for the most recent successful snapshot across
+    all enabled cameras. If no camera has produced a snapshot within the
+    configured threshold, sends a Telegram alarm. This catches hangs
+    that the event listener cannot detect (e.g. event loop blocked).
+    """
+    from app.application.services.snapshot_service import SnapshotService
+
+    threshold = settings.capture_timeout_seconds * 2
+    cutoff = datetime.now(ZoneInfo(settings.timezone)) - timedelta(seconds=threshold)
+
+    try:
+        async with UnitOfWork(session_factory) as uow:
+            cameras = await uow.cameras.get_enabled()
+            stale_cameras = []
+            for cam in cameras:
+                last = await uow.snapshots.get_last_by_camera(cam.id)
+                if not last or last.captured_at.replace(tzinfo=ZoneInfo(settings.timezone)) < cutoff:
+                    age = "never" if not last else str(
+                        datetime.now(ZoneInfo(settings.timezone))
+                        - last.captured_at.replace(tzinfo=ZoneInfo(settings.timezone))
+                    )
+                    stale_cameras.append(f"{cam.name} (ID {cam.id}): last {age} ago")
+
+            if stale_cameras:
+                msg = (
+                    f"Camera Monitor HEALTH ALARM\n"
+                    f"No recent snapshots (threshold: {threshold}s)\n"
+                    f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    + "\n".join(f"  - {c}" for c in stale_cameras)
+                )
+                logger.error(f"Health check failed: {len(stale_cameras)} stale cameras")
+                notifier = TelegramNotifier.from_settings()
+                await notifier.send_message(msg)
+            else:
+                logger.debug(f"Health check OK: {len(cameras)} cameras active")
+    except Exception:
+        logger.exception("Health check job failed")
+
+
+def schedule_health_check(interval_minutes: int = 10) -> None:
+    """Schedule the periodic health check job.
+
+    Args:
+        interval_minutes: Minutes between health check runs.
+    """
+    scheduler.add_job(
+        health_check_job,
+        trigger=IntervalTrigger(minutes=interval_minutes),
+        id="health_check",
+        replace_existing=True,
+        name="Periodic health check",
+    )
+    logger.info(f"Scheduled health check every {interval_minutes} minutes")

@@ -1,8 +1,8 @@
 """Unit of Work pattern wrapping an async SQLAlchemy session.
 
 Defines ``UnitOfWork``, an async context manager that owns a single database
-session and exposes the camera and snapshot repositories, committing on
-success and rolling back on error.
+session and exposes the camera, snapshot, analysis job, and snapshot analysis
+repositories, committing on success and rolling back on error.
 """
 
 from collections.abc import AsyncGenerator
@@ -12,14 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.repositories.camera import CameraRepository
 from app.application.repositories.snapshot import SnapshotRepository
+from app.application.repositories.analysis_job import AnalysisJobRepository
+from app.application.repositories.snapshot_analysis import SnapshotAnalysisRepository
 
 
 class UnitOfWork:
     """Transactional scope owning a database session and repositories.
 
-    On entering the async context a new session is created and the camera and
-    snapshot repositories are bound to it. On exit the session is committed
-    when no exception occurred, otherwise it is rolled back and closed.
+    On entering the async context a new session is created and all
+    repositories are bound to it. On exit the session is committed when no
+    exception occurred, otherwise it is rolled back and closed.
     """
 
     def __init__(self, factory: async_sessionmaker[AsyncSession]):
@@ -27,6 +29,8 @@ class UnitOfWork:
         self._session: AsyncSession | None = None
         self.cameras: CameraRepository | None = None
         self.snapshots: SnapshotRepository | None = None
+        self.analysis_jobs: AnalysisJobRepository | None = None
+        self.snapshot_analyses: SnapshotAnalysisRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         """Open a new session and initialize the repositories.
@@ -37,6 +41,8 @@ class UnitOfWork:
         self._session = self._factory()
         self.cameras = CameraRepository(self._session)
         self.snapshots = SnapshotRepository(self._session)
+        self.analysis_jobs = AnalysisJobRepository(self._session)
+        self.snapshot_analyses = SnapshotAnalysisRepository(self._session)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -60,6 +66,8 @@ class UnitOfWork:
             self._session = None
             self.cameras = None
             self.snapshots = None
+            self.analysis_jobs = None
+            self.snapshot_analyses = None
 
     async def commit(self) -> None:
         """Commit the current transaction if a session is active."""

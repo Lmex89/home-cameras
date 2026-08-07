@@ -1,8 +1,8 @@
 """Pydantic schemas for request validation and response serialization.
 
 Provides input schemas (``CameraCreate``, ``CameraUpdate``), read schemas
-(``CameraRead``, ``SnapshotRead``), and report/result schemas used across
-the API layer.
+(``CameraRead``, ``SnapshotRead``, ``SnapshotAnalysisRead``), and report/result
+schemas used across the API layer including ML analysis.
 """
 
 from datetime import date, datetime
@@ -89,13 +89,38 @@ class SnapshotForceResult(BaseModel):
     error: str | None = None
 
 
+class SnapshotAnalysisRead(BaseModel):
+    """Serialize a snapshot analysis result for API responses."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    snapshot_id: int
+    model_name: str
+    model_version: str
+    status: str
+    objects_json: str | None = None
+    person_count: int = 0
+    review_required: bool = False
+    review_reason: str | None = None
+    anomaly_score: float | None = None
+    error_message: str | None = None
+    analyzed_at: datetime | None = None
+
+
+class SnapshotWithAnalysis(SnapshotRead):
+    """Extend SnapshotRead with optional analysis data."""
+
+    analysis: SnapshotAnalysisRead | None = None
+
+
 class DailyReportCamera(BaseModel):
     """Serialize one camera's section within a daily report."""
 
     camera_id: int
     camera_name: str
     total_snapshots: int
-    snapshots: list[SnapshotRead]
+    snapshots: list[SnapshotWithAnalysis]
 
 
 class DailyReport(BaseModel):
@@ -123,4 +148,79 @@ class VideoRequest(BaseModel):
 class VideoResponse(BaseModel):
     """Serialize the result of a successful video generation."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     video_url: str
+
+
+class AnnotatedVideoRequest(BaseModel):
+    """Validate payload for annotated timelapse video generation."""
+
+    camera_id: int = Field(default=1, ge=1)
+    date: date
+    classes: Annotated[str | None, StringConstraints(strip_whitespace=True)] = Field(
+        default=None, description="Comma-separated classes, overrides config default"
+    )
+
+
+class AnalysisReviewUpdate(BaseModel):
+    """Payload for updating the review status of an analysis."""
+
+    review_required: bool
+    review_reason: str | None = None
+
+
+class RetentionResultRead(BaseModel):
+    """Serialize the outcome of a retention/archive cleanup run.
+
+    All counts are non-negative integers describing how many items
+    were processed in each step of the retention lifecycle.
+    """
+
+    snapshots_zipped: int = Field(default=0, ge=0)
+    snapshots_deleted: int = Field(default=0, ge=0)
+    videos_archived: int = Field(default=0, ge=0)
+    videos_deleted: int = Field(default=0, ge=0)
+
+
+class PurgeRequest(BaseModel):
+    """Validate payload for the destructive purge endpoint."""
+
+    days: int = Field(default=3, ge=1, description="Delete snapshots, analyses and videos older than this many days")
+
+
+class PurgeResultRead(BaseModel):
+    """Serialize the outcome of a destructive purge run.
+
+    All counts are non-negative integers describing how many items
+    were removed from disk and database.
+    """
+
+    raw_snapshots_deleted: int = Field(default=0, ge=0)
+    snapshot_analyses_deleted: int = Field(default=0, ge=0)
+    analysis_jobs_deleted: int = Field(default=0, ge=0)
+    snapshots_deleted: int = Field(default=0, ge=0)
+    snapshot_archives_deleted: int = Field(default=0, ge=0)
+    videos_deleted: int = Field(default=0, ge=0)
+    video_archives_deleted: int = Field(default=0, ge=0)
+
+
+class PendingReviewItem(BaseModel):
+    """A snapshot flagged for human review with its metadata."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    analysis_id: int
+    snapshot_id: int
+    camera_id: int
+    camera_name: str
+    captured_at: datetime
+    image_path: str
+    model_name: str
+    person_count: int = 0
+    review_required: bool = False
+    review_reason: str | None = None
+    anomaly_score: float | None = None
+    error_message: str | None = None
+    objects_json: str | None = None
+    analyzed_at: datetime | None = None

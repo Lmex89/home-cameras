@@ -12,6 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from loguru import logger
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
@@ -55,6 +56,78 @@ class RetentionService:
 
         return result
 
+    async def purge_older_than(self, days: int) -> dict:
+        """Permanently delete snapshots, analyses, videos and archives older than *days*.
+
+        Unlike ``run()``, this does not create ZIP archives. It removes the
+        raw image files and the database records in one pass.
+
+        Args:
+            days: Number of days to keep; anything older is deleted.
+
+        Returns:
+            Summary dict with counts for each deletion step.
+        """
+        tz = ZoneInfo(settings.timezone)
+        now = datetime.now(tz)
+        cutoff = now - timedelta(days=days)
+        result: dict[str, int] = {}
+
+        logger.warning(f"PURGE: deleting snapshots, analyses, videos and archives older than {cutoff}")
+
+        # Fetch IDs and paths first so we can delete raw files before DB rows
+        stmt = select(Snapshot.id, Snapshot.image_path, Snapshot.archive_path).where(
+            Snapshot.captured_at < cutoff
+        )
+        rows = await self._uow._session.execute(stmt)
+        snapshots = list(rows.mappings().all())
+        snapshot_ids = [s["id"] for s in snapshots]
+
+        # Delete raw image files
+        raw_deleted = 0
+        for s in snapshots:
+            image_path = s["image_path"]
+            if image_path:
+                full_path = settings.snapshots_dir / image_path
+                if full_path.is_file():
+                    try:
+                        full_path.unlink()
+                        raw_deleted += 1
+                    except OSError as exc:
+                        logger.warning(f"Failed to delete raw snapshot {full_path}: {exc}")
+        result["raw_snapshots_deleted"] = raw_deleted
+
+        # Belt-and-suspenders: explicitly delete child records first
+        analyses_deleted = await self._uow.snapshot_analyses.delete_by_snapshot_ids(snapshot_ids)
+        jobs_deleted = await self._uow.analysis_jobs.delete_by_snapshot_ids(snapshot_ids)
+        snapshots_deleted = await self._uow.snapshots.delete_older_than(cutoff)
+
+        result["snapshot_analyses_deleted"] = analyses_deleted
+        result["analysis_jobs_deleted"] = jobs_deleted
+        result["snapshots_deleted"] = snapshots_deleted
+
+        # Delete orphaned snapshot archive ZIPs
+        archive_zips_deleted = 0
+        archives_base = settings.archives_dir / "snapshots"
+        if archives_base.exists():
+            for zip_path in archives_base.rglob("*.zip"):
+                rel = zip_path.relative_to(settings.archives_dir)
+                count = await self._uow.snapshots.count_by_archive_zip(str(rel))
+                if count == 0:
+                    try:
+                        zip_path.unlink()
+                        archive_zips_deleted += 1
+                    except OSError as exc:
+                        logger.warning(f"Failed to delete archive {zip_path}: {exc}")
+        result["snapshot_archives_deleted"] = archive_zips_deleted
+
+        # Delete videos and video archives older than cutoff
+        result["videos_deleted"] = await self._delete_expired_videos(cutoff)
+        result["video_archives_deleted"] = await self._delete_expired_video_archives(cutoff)
+
+        logger.warning(f"PURGE complete: {result}")
+        return result
+
     # ── snapshot archiving ────────────────────────────────────────────
 
     async def _zip_old_snapshots(self, cutoff: datetime) -> int:
@@ -82,6 +155,7 @@ class RetentionService:
             groups.setdefault(key, []).append(snap)
 
         archived = 0
+        batch_size = 50
         archives_base = settings.archives_dir / "snapshots"
         for (cam_id, date_str), group in groups.items():
             zip_rel = f"snapshots/{cam_id}/{date_str}.zip"
@@ -89,17 +163,44 @@ class RetentionService:
             zip_abs.parent.mkdir(parents=True, exist_ok=True)
 
             with zipfile.ZipFile(zip_abs, "a", zipfile.ZIP_DEFLATED) as zf:
+                batch_count = 0
+                missing_ids: list[int] = []
                 for snap in group:
-                    src = settings.snapshots_dir / snap.image_path
-                    if not src.exists():
+                    if not snap.image_path or not (settings.snapshots_dir / snap.image_path).exists():
+                        missing_ids.append(snap.id)
                         continue
+                    src = settings.snapshots_dir / snap.image_path
                     arcname = src.name
                     if arcname not in zf.namelist():
                         zf.write(src, arcname)
+                    # Verify file was actually written to the ZIP
+                    if arcname not in zf.namelist():
+                        logger.error(f"Failed to add {src} to {zip_abs}, skipping deletion")
+                        continue
                     archive_ref = f"{zip_rel}::{arcname}"
-                    await self._uow.snapshots.update_archive_path(snap.id, archive_ref)
+                    try:
+                        await self._uow.snapshots.update_archive_path(snap.id, archive_ref)
+                    except Exception:
+                        logger.exception(f"Failed to update archive_path for snapshot {snap.id}, skipping deletion")
+                        continue
                     src.unlink(missing_ok=True)
                     archived += 1
+                    batch_count += 1
+
+                    if batch_count >= batch_size:
+                        await self._uow.commit()
+                        batch_count = 0
+                if batch_count > 0:
+                    await self._uow.commit()
+                if missing_ids:
+                    marked = await self._uow.snapshots.mark_archived_batch(
+                        missing_ids, f"{zip_rel}::<missing>"
+                    )
+                    await self._uow.commit()
+                    logger.warning(
+                        f"Marked {marked} snapshot(s) as <missing> for "
+                        f"camera {cam_id} on {date_str} (raw file absent)"
+                    )
 
         logger.info(f"Archived {archived} snapshots into {len(groups)} ZIP files")
         return archived
@@ -213,4 +314,26 @@ class RetentionService:
 
         if deleted:
             logger.info(f"Deleted {deleted} expired video files")
+        return deleted
+
+    async def _delete_expired_video_archives(self, cutoff: datetime) -> int:
+        """Delete only video archive ZIPs past the cutoff.
+
+        Args:
+            cutoff: Exclusive lower-bound timestamp; archive files older than
+                this are removed from disk.
+
+        Returns:
+            The number of archive ZIP files deleted.
+        """
+        deleted = 0
+        archives_base = settings.archives_dir / "videos"
+        if archives_base.exists():
+            for zip_path in archives_base.rglob("*.zip"):
+                mtime = datetime.fromtimestamp(zip_path.stat().st_mtime, tz=ZoneInfo(settings.timezone))
+                if mtime < cutoff:
+                    zip_path.unlink(missing_ok=True)
+                    deleted += 1
+        if deleted:
+            logger.info(f"Deleted {deleted} expired video archives")
         return deleted

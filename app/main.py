@@ -21,7 +21,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
-from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead
+from app.domain.schemas import CameraRead, CameraWithLastSnapshot, SnapshotRead, RetentionResultRead, PurgeRequest, PurgeResultRead
 
 os.environ["TZ"] = settings.timezone
 try:
@@ -53,10 +53,10 @@ logger.add(
 # ──────────────────────────────────────────────────────────────────────
 
 from app.core.database import init_db
-from app.api.routers import cameras, snapshots, report, videos
+from app.api.routers import cameras, snapshots, report, videos, reviews
 from app.web import pages
 from app.seed import seed_from_yaml
-from app.scheduler import scheduler, load_schedule, schedule_retention
+from app.scheduler import scheduler, load_schedule, schedule_retention, schedule_analysis, schedule_timelapse, schedule_health_check
 
 
 @asynccontextmanager
@@ -80,6 +80,9 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     await load_schedule()
     schedule_retention()
+    schedule_analysis()
+    schedule_timelapse()
+    schedule_health_check(settings.health_check_interval_minutes)
     logger.info(f"{settings.app_name} started")
     yield
     logger.info(f"Shutting down {settings.app_name}")
@@ -119,6 +122,7 @@ app.include_router(cameras.router)
 app.include_router(snapshots.router)
 app.include_router(report.router)
 app.include_router(videos.router)
+app.include_router(reviews.router)
 
 
 @app.get("/index.html", response_class=HTMLResponse)
@@ -131,6 +135,20 @@ async def serve_dashboard_index():
     """
     index_path = Path(__file__).resolve().parent.parent / "index.html"
     return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+
+
+@app.get("/reviews.html", response_class=HTMLResponse)
+async def serve_reviews_page():
+    """Serve the standalone review dashboard page.
+
+    \f
+    Returns:
+        The contents of the project-root reviews.html file.
+    """
+    path = Path(__file__).resolve().parent.parent / "reviews.html"
+    if not path.exists():
+        return HTMLResponse("<h1>Not Found</h1><p>reviews.html not deployed</p>", status_code=404)
+    return HTMLResponse(content=path.read_text(encoding="utf-8"))
 
 
 @app.get("/data/manifest.json")
@@ -180,13 +198,104 @@ async def serve_manifest():
             )
             snapshots.setdefault(cam_id, {}).setdefault(d, []).append(snap_dict)
 
+        from app.application.services.analysis_service import AnalysisService as _As
+        analysis_service = _As(uow)
+        pending_reviews = await analysis_service.get_pending_reviews(limit=100)
+        review_count = len(pending_reviews)
+
         logger.info(
             f"Manifest generated: {len(cameras_data)} cameras, "
-            f"{sum(total_by_cam.values())} snapshots"
+            f"{sum(total_by_cam.values())} snapshots, "
+            f"{review_count} pending reviews"
         )
 
         return {
             "generated_at": datetime.now().isoformat(),
             "cameras": cameras_data,
             "snapshots": snapshots,
+            "pending_reviews": pending_reviews[:10],
+            "review_count": review_count,
         }
+
+
+@app.post("/api/retention/run", response_model=RetentionResultRead)
+async def trigger_retention():
+    """Trigger the retention/archive cleanup job immediately.
+
+    Runs the same pipeline as the daily 03:00 cron: zips snapshots
+    and videos older than the zip threshold, then deletes records
+    and archives past the retention threshold.
+
+    \f
+    **Notes:**
+    - Safe to call concurrently with the cron job; archive ZIPs use
+      append mode and deduplicate entries by filename.
+    - Returns counts for each step of the retention lifecycle.
+
+    Returns:
+        RetentionResultRead with per-step counts.
+    """
+    from app.core.database import session_factory as _sf
+    from app.application.services.retention_service import RetentionService
+
+    logger.info("Manual retention: pausing capture/analysis schedulers")
+    capture_ids = [j.id for j in scheduler.get_jobs() if j.id.startswith("capture_")]
+    for jid in capture_ids:
+        scheduler.pause_job(jid)
+    scheduler.pause_job("analysis_processing")
+
+    try:
+        async with UnitOfWork(_sf) as uow:
+            svc = RetentionService(uow)
+            result = await svc.run()
+            logger.info(f"Manual retention run: {result}")
+            return RetentionResultRead.model_validate(result)
+    except Exception:
+        logger.exception("Manual retention run failed")
+        raise
+    finally:
+        logger.info("Manual retention: resuming capture/analysis schedulers")
+        for jid in capture_ids:
+            scheduler.resume_job(jid)
+        scheduler.resume_job("analysis_processing")
+
+
+@app.post("/api/retention/purge", response_model=PurgeResultRead)
+async def trigger_purge(payload: PurgeRequest):
+    """Permanently delete snapshots, analyses, videos and archives older than *days*.
+
+    Unlike ``/api/retention/run``, this does **not** create ZIP archives.
+    It deletes the raw image files, database rows, and any orphaned archives.
+
+    \f
+    **Warning:** This is destructive and cannot be undone.
+
+    Args:
+        payload: PurgeRequest containing the number of days to keep.
+
+    Returns:
+        PurgeResultRead with counts of deleted items.
+    """
+    from app.core.database import session_factory as _sf
+    from app.application.services.retention_service import RetentionService
+
+    logger.warning(f"Manual purge requested: keep last {payload.days} days")
+    capture_ids = [j.id for j in scheduler.get_jobs() if j.id.startswith("capture_")]
+    for jid in capture_ids:
+        scheduler.pause_job(jid)
+    scheduler.pause_job("analysis_processing")
+
+    try:
+        async with UnitOfWork(_sf) as uow:
+            svc = RetentionService(uow)
+            result = await svc.purge_older_than(payload.days)
+            logger.warning(f"Manual purge complete: {result}")
+            return PurgeResultRead.model_validate(result)
+    except Exception:
+        logger.exception("Manual purge failed")
+        raise
+    finally:
+        logger.info("Manual purge: resuming capture/analysis schedulers")
+        for jid in capture_ids:
+            scheduler.resume_job(jid)
+        scheduler.resume_job("analysis_processing")

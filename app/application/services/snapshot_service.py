@@ -12,6 +12,7 @@ import tempfile
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -20,8 +21,9 @@ from loguru import logger
 from app.core.config import settings
 from app.core.unit_of_work import UnitOfWork
 from app.domain.models import Camera, Snapshot
-from app.domain.schemas import DailyReport
+from app.domain.schemas import DailyReport, DailyReportCamera, SnapshotRead, SnapshotWithAnalysis, SnapshotAnalysisRead
 from app.infrastructure.onvif import ONVIFCameraClient
+from app.application.services.analysis_service import AnalysisService
 
 
 class SnapshotService:
@@ -32,6 +34,8 @@ class SnapshotService:
     (dependency inversion).
     """
 
+    _ONVIF_TIMEOUT: float = 20.0
+
     def __init__(self, uow: UnitOfWork, onvif: ONVIFCameraClient):
         """Inject the unit of work and ONVIF client used by this service.
 
@@ -41,6 +45,30 @@ class SnapshotService:
         """
         self._uow = uow
         self._onvif = onvif
+        self._analysis = AnalysisService(uow)
+
+    async def _run_blocking(self, fn: Callable[..., Any], *args: Any, timeout: float | None = None) -> Any:
+        """Run a blocking synchronous call in a thread with a hard timeout.
+
+        Prevents synchronous ONVIF SOAP calls from stalling the asyncio
+        event loop when the remote camera becomes unresponsive.
+
+        Args:
+            fn: The blocking callable to invoke.
+            *args: Positional arguments forwarded to ``fn``.
+            timeout: Maximum seconds to wait. Defaults to ``_ONVIF_TIMEOUT``.
+
+        Returns:
+            Whatever ``fn`` returns.
+
+        Raises:
+            TimeoutError: When ``fn`` does not complete within ``timeout``.
+        """
+        t = timeout if timeout is not None else self._ONVIF_TIMEOUT
+        return await asyncio.wait_for(
+            asyncio.to_thread(fn, *args),
+            timeout=t,
+        )
 
     async def _save_image(self, camera: Camera, data: bytes) -> tuple[Path, datetime]:
         """Write raw image bytes to disk under the snapshots directory.
@@ -99,8 +127,9 @@ class SnapshotService:
         """
         logger.info(f"Camera {camera.name}: trying ONVIF GetSnapshotUri")
         try:
-            uri, error = self._onvif.get_snapshot_uri(
-                camera.host, camera.port, camera.username, camera.password, camera.profile_token
+            uri, error = await self._run_blocking(
+                self._onvif.get_snapshot_uri,
+                camera.host, camera.port, camera.username, camera.password, camera.profile_token,
             )
             if error or not uri:
                 return None, None, error or "Empty URI"
@@ -110,6 +139,9 @@ class SnapshotService:
                 resp.raise_for_status()
             file_path, captured_at = await self._save_image(camera, resp.content)
             return file_path, captured_at, None
+        except TimeoutError:
+            logger.error(f"Camera {camera.name}: ONVIF GetSnapshotUri timed out after {self._ONVIF_TIMEOUT}s")
+            return None, None, f"ONVIF timed out after {self._ONVIF_TIMEOUT}s"
         except Exception as e:
             return None, None, str(e)
 
@@ -128,23 +160,26 @@ class SnapshotService:
         """
         logger.info(f"Camera {camera.name}: trying RTSP+ffmpeg")
         try:
-            # Strategy: specific profile → best resolution → JPEG → first available
             stream_uri = None
             if camera.profile_token:
-                stream_uri, err = self._onvif.get_stream_uri(
-                    camera.host, camera.port, camera.username, camera.password, camera.profile_token
+                stream_uri, err = await self._run_blocking(
+                    self._onvif.get_stream_uri,
+                    camera.host, camera.port, camera.username, camera.password, camera.profile_token,
                 )
             if not stream_uri:
-                stream_uri, _, err = self._onvif.get_best_stream_uri(
-                    camera.host, camera.port, camera.username, camera.password
+                stream_uri, _, err = await self._run_blocking(
+                    self._onvif.get_best_stream_uri,
+                    camera.host, camera.port, camera.username, camera.password,
                 )
             if not stream_uri:
-                stream_uri, _, err = self._onvif.get_jpeg_stream_uri(
-                    camera.host, camera.port, camera.username, camera.password
+                stream_uri, _, err = await self._run_blocking(
+                    self._onvif.get_jpeg_stream_uri,
+                    camera.host, camera.port, camera.username, camera.password,
                 )
             if not stream_uri:
-                stream_uri, err = self._onvif.get_first_stream_uri(
-                    camera.host, camera.port, camera.username, camera.password
+                stream_uri, err = await self._run_blocking(
+                    self._onvif.get_first_stream_uri,
+                    camera.host, camera.port, camera.username, camera.password,
                 )
             if not stream_uri:
                 return None, None, err or "No RTSP stream found"
@@ -154,6 +189,7 @@ class SnapshotService:
             proc = await asyncio.create_subprocess_exec(
                 'ffmpeg',
                 '-rtsp_transport', 'tcp',
+                '-timeout', '10000000',
                 '-i', auth_uri,
                 '-vframes', '1',
                 '-f', 'image2pipe',
@@ -162,13 +198,32 @@ class SnapshotService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return None, None, "ffmpeg timed out after 30s"
+
             if proc.returncode != 0 or not stdout:
-                error_msg = (stderr.decode(errors='replace')[:200] if stderr else "ffmpeg returned no data")
+                stderr_text = stderr.decode(errors='replace') if stderr else ""
+                logger.debug(f"Camera {camera.name}: ffmpeg stderr: {stderr_text}")
+                error_lines = [
+                    line for line in stderr_text.splitlines()
+                    if line.strip() and not line.startswith('ffmpeg version')
+                    and not line.startswith('built with') and not line.startswith('configuration:')
+                    and not line.startswith('libav') and 'Copyright' not in line
+                ]
+                error_msg = " | ".join(error_lines[-3:]) if error_lines else "ffmpeg returned no data"
+                if len(error_msg) > 300:
+                    error_msg = error_msg[:300] + "..."
                 return None, None, f"ffmpeg failed: {error_msg}"
 
             file_path, captured_at = await self._save_image(camera, stdout)
             return file_path, captured_at, None
+        except TimeoutError:
+            logger.error(f"Camera {camera.name}: ONVIF stream resolution timed out after {self._ONVIF_TIMEOUT}s")
+            return None, None, f"ONVIF timed out after {self._ONVIF_TIMEOUT}s"
         except FileNotFoundError:
             return None, None, "ffmpeg not found in PATH"
         except Exception as e:
@@ -202,6 +257,7 @@ class SnapshotService:
                 )
                 logger.info(f"Camera {camera.name}: direct URL snapshot saved")
                 await self._uow.snapshots.add(snapshot)
+                await self._analysis.analyze_snapshot(snapshot)
                 return snapshot
             last_error = error or "direct URL failed"
 
@@ -217,6 +273,7 @@ class SnapshotService:
             )
             logger.info(f"Camera {camera.name}: ONVIF snapshot saved to {file_path}")
             await self._uow.snapshots.add(snapshot)
+            await self._analysis.analyze_snapshot(snapshot)
             return snapshot
         last_error = error
 
@@ -232,6 +289,7 @@ class SnapshotService:
             )
             logger.info(f"Camera {camera.name}: RTSP snapshot saved to {file_path}")
             await self._uow.snapshots.add(snapshot)
+            await self._analysis.analyze_snapshot(snapshot)
             return snapshot
         last_error = error
 
@@ -271,8 +329,6 @@ class SnapshotService:
         Returns:
             A DailyReport schema with validated camera and snapshot data.
         """
-        from app.domain.schemas import DailyReport, DailyReportCamera, SnapshotRead
-
         all_snapshots = await self._uow.snapshots.get_by_date(target_date)
         logger.debug(f"Daily report for {target_date}: {len(all_snapshots)} snapshots total")
         grouped: dict[int, list[Snapshot]] = defaultdict(list)
@@ -282,7 +338,21 @@ class SnapshotService:
         for camera_id, snap_list in grouped.items():
             cam = await self._uow.cameras.get_by_id(camera_id)
             name = cam.name if cam else f"Camera {camera_id}"
-            snapshots = [SnapshotRead.model_validate(s) for s in snap_list]
+            snapshot_ids = [s.id for s in snap_list]
+            analyses = await self._uow.snapshot_analyses.get_by_camera_and_date(camera_id, snapshot_ids)
+            analysis_by_snapshot: dict[int, SnapshotAnalysisRead | None] = {}
+            for a in analyses:
+                analysis_by_snapshot[a.snapshot_id] = SnapshotAnalysisRead.model_validate(a) if a else None
+
+            snapshots = []
+            for s in snap_list:
+                snap_read = SnapshotRead.model_validate(s)
+                snap_with = SnapshotWithAnalysis(
+                    **snap_read.model_dump(),
+                    analysis=analysis_by_snapshot.get(s.id),
+                )
+                snapshots.append(snap_with)
+
             cameras_list.append(
                 DailyReportCamera(
                     camera_id=camera_id,

@@ -11,9 +11,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from loguru import logger
 
-from app.api.deps import get_camera_service, get_snapshot_service
+from app.api.deps import get_camera_service
 from app.application.services.camera_service import CameraService
-from app.application.services.snapshot_service import SnapshotService
 
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 router = APIRouter(tags=["pages"])
