@@ -339,7 +339,7 @@ func (s *SnapshotService) captureRTSP(ctx context.Context, cam domain.Camera) ([
 
 	cmd := exec.CommandContext(cctx, "ffmpeg",
 		"-rtsp_transport", "tcp",
-		"-stimeout", "10000000",
+		"-timeout", "10000000",
 		"-i", authURI,
 		"-vframes", "1",
 		"-q:v", "1",
