@@ -140,11 +140,11 @@ end
 # Query the HTTP health endpoint and print the result.
 #
 # Returns:
-#   Nothing. Prints the /healthz JSON body, or an explanation when the
+#   Nothing. Prints the /api/healthz JSON body, or an explanation when the
 #   endpoint is unreachable or curl is not installed.
 function _status_health
     if command -q curl
-        set -l body (curl -s -m 3 http://localhost:$PORT/healthz)
+        set -l body (curl -s -m 3 http://localhost:$PORT/api/healthz)
         if test -n "$body"
             echo "health:  $body"
         else
