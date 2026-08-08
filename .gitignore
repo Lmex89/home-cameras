@@ -17,3 +17,5 @@ bin/
 *~
 .cache/
 .codegraph/
+frontend/node_modules/
+frontend/dist/

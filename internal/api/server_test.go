@@ -655,28 +655,3 @@ func writeTestZip(t *testing.T, path string, entries map[string]string) {
 		t.Fatal(err)
 	}
 }
-
-// TestStaticPages covers the embedded web assets and traversal guard.
-func TestStaticPages(t *testing.T) {
-	s, _ := newTestServer(t)
-	w := do(s, http.MethodGet, "/", "")
-	if w.Code != http.StatusTemporaryRedirect {
-		t.Fatalf("root: %d", w.Code)
-	}
-	w = do(s, http.MethodGet, "/index.html", "")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "DOCTYPE") {
-		t.Fatalf("index: %d", w.Code)
-	}
-	w = do(s, http.MethodGet, "/reviews.html", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("reviews: %d", w.Code)
-	}
-	w = do(s, http.MethodGet, "/static/js/app.js", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("static: %d", w.Code)
-	}
-	w = do(s, http.MethodGet, "/static/../secret", "")
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("traversal: %d", w.Code)
-	}
-}

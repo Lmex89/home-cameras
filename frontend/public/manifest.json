@@ -1,0 +1,21 @@
+{
+  "name": "SecureView Home Security",
+  "short_name": "SecureView",
+  "description": "Modern home security and camera monitoring dashboard.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1326",
+  "theme_color": "#0EA5E9",
+  "icons": [
+    {
+      "src": "favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

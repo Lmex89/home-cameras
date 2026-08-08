@@ -66,8 +66,7 @@ internal/
 │   └── archive/archive.go    # ZIP reference "zip::filename" reader
 ├── api/                      # chi router + handlers (validation lives here)
 ├── scheduler/                # per-camera timers (restart-anchored) + robfig/cron jobs
-├── seed/seed.go              # YAML → DB idempotent sync
-└── web/static/               # embedded SPA (index.html, reviews.html, app.js, app.css)
+└── seed/seed.go              # YAML → DB idempotent sync
 ```
 
 DDD-lite: handlers → services (contain logic) → repositories (data access).
@@ -111,6 +110,50 @@ libs and bakes an opset-11 yolov8n ONNX export (build-time `model-builder`
 stage — no host-side `make model` needed). Keep `BASE=opencv` working as
 an alias. SQLite stays the default; see README "When to move off SQLite"
 for the PostgreSQL migration guidance.
+
+## Frontend (React + TypeScript)
+
+The SPA lives in `frontend/` — a self-contained Vite + React 18 +
+TypeScript project, built as its own Docker image (`cameras-frontend`,
+nginx-alpine). The Go binary is API-only: it serves `/api/*` and
+`/snapshots/*` (no embedded HTML — the legacy `internal/web/` SPA was
+removed). The docker compose stack serves the React app on
+`FRONTEND_PORT` (default 3000); nginx proxies `/api/*` and `/snapshots/*`
+to the `cameras` service, so the app uses same-origin relative URLs and no
+CORS. The upstream port is envsubst'd from `CAMERAS_PORT` (compose passes
+`${PORT:-8004}`), which is why the nginx config ships as
+`nginx.conf.template`.
+
+| Task | Command |
+|---|---|
+| Dev server (proxies /api to :8004) | `make frontend-dev` (Node >= 18 required) |
+| Build image | `make frontend` or `docker compose build frontend` |
+| Run stack | `make docker-up` (backend :8004, frontend :3000) |
+
+Source layout: `src/api/` (typed client mirroring the Go DTOs in
+`internal/domain/schemas.go`), `src/pages/Dashboard.tsx` (migrated from
+`internal/web/static/index.html`), `src/pages/Reviews.tsx` (from
+`reviews.html` — both legacy HTML sources now deleted), `src/components/`
+(shared Lightbox/Toast/Ambient, plus
+`CameraDashboard.tsx` — the SecureView "Tactical Intelligence"
+React/Tailwind dashboard component, previewed at `/design`, designed to be
+fed real camera feeds through its typed props), `src/components/MobileDashboard.tsx`
+and `src/components/MobileReviews.tsx` — the mobile-first iOS-style
+command decks (glass app bar + bottom nav, radar-ping armed card,
+single-column live feeds with PTZ/mic overlays, 44px touch targets),
+auto-selected below 768px by the Dashboard/Reviews pages via
+`src/hooks/useMediaQuery.ts`), `src/styles/` (`tailwind.css` with the
+iOS dark-mode theme tokens: black `#000000` canvas, system blue
+`#0A84FF` accent, system green `#30D158` safe states, system red
+`#FF453A` alerts, glass surfaces `rgb(28 28 30 / 72%)` with
+`rgba(255,255,255,0.12)` borders, SF Pro system font stack with tabular
+numerals for data; Tailwind component styles only — no preflight — and
+both the desktop pages and the mobile decks share this one design
+system; legacy CSS files were removed).
+PWA assets (manifest.json, favicon) live in `public/`. Data fetching is
+plain hooks + fetch (no data-fetch library); the dashboard polls
+`/api/data/manifest.json` every 30 s, reviews poll
+`/api/reviews/pending` every 15 s.
 
 ## Dependencies
 

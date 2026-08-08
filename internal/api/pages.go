@@ -4,20 +4,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-
-	"github.com/Lmex89/home-cameras/internal/web"
 )
-
-// handleIndex serves the embedded standalone dashboard SPA. GET /index.html
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	web.ServeHTML(w, r, "index.html")
-}
-
-// handleReviews serves the embedded standalone review dashboard page.
-// GET /reviews.html
-func (s *Server) handleReviews(w http.ResponseWriter, r *http.Request) {
-	web.ServeHTML(w, r, "reviews.html")
-}
 
 // handleSnapshotFiles serves raw snapshot files from the snapshots
 // directory (legacy static mount /snapshots). Path traversal is

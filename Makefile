@@ -19,7 +19,7 @@ PKG_CONFIG_PATH := $(OPENCV_PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 LD_LIBRARY_PATH := $(OPENCV_PREFIX)/lib:$(LD_LIBRARY_PATH)
 export PKG_CONFIG_PATH LD_LIBRARY_PATH
 
-.PHONY: build run dev test vet fmt docker docker-up docker-down docker-build-opencv clean requirements model model-force clean-model opencv opencv-build
+.PHONY: build run dev test vet fmt docker docker-up docker-down docker-build-opencv clean requirements model model-force clean-model opencv opencv-build frontend frontend-up frontend-dev
 
 ## build: compile the server binary into bin/
 build:
@@ -148,7 +148,7 @@ opencv-build:
 docker:
 	docker compose build
 
-## docker-up: build and start the container in the background (stub detector)
+## docker-up: build and start the containers in the background (stub detector)
 docker-up:
 	docker compose up -d --build
 
@@ -163,3 +163,15 @@ docker-build-opencv:
 ## clean: remove build artifacts
 clean:
 	rm -rf bin
+
+## frontend: build the React frontend Docker image
+frontend:
+	docker build -t cameras-frontend:latest frontend
+
+## frontend-up: build and start the frontend container (requires the cameras service running)
+frontend-up:
+	docker compose up -d --build frontend
+
+## frontend-dev: run the Vite dev server (needs Node.js >= 18; proxies /api to :8004)
+frontend-dev:
+	cd frontend && npm install && npm run dev

@@ -1,7 +1,7 @@
 // Package api wires the HTTP server: a chi router with CORS/logging
-// middleware, the API handlers, the embedded web pages, and static
-// asset serving. Handlers are thin: they validate input, call services,
-// and map errors to HTTP status codes.
+// middleware, the API handlers, and snapshot file serving. Handlers are
+// thin: they validate input, call services, and map errors to HTTP
+// status codes.
 package api
 
 import (
@@ -23,7 +23,6 @@ import (
 	"github.com/Lmex89/home-cameras/internal/repository"
 	"github.com/Lmex89/home-cameras/internal/scheduler"
 	"github.com/Lmex89/home-cameras/internal/service"
-	"github.com/Lmex89/home-cameras/internal/web"
 )
 
 // Deps bundles every dependency handlers need. Built once in
@@ -81,15 +80,8 @@ func (s *Server) Router() http.Handler {
 	r.Use(s.requestLogger)
 	r.Use(corsMiddleware)
 
-	// Web pages and static assets.
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/index.html", http.StatusTemporaryRedirect)
-	})
-	r.Get("/index.html", s.handleIndex)
-	r.Get("/reviews.html", s.handleReviews)
-	r.Get("/static/*", func(w http.ResponseWriter, r *http.Request) {
-		web.ServeStatic(w, r)
-	})
+	// The UI is the standalone React app (frontend/, served by nginx in
+	// Docker); the backend only exposes the API and snapshot files.
 	r.Get("/snapshots/*", s.handleSnapshotFiles)
 
 	// API routers.

@@ -27,9 +27,7 @@ services:
       YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-models/yolov8n.onnx}
     volumes:
       - ./data:/data
-      # Uncomment to manage cameras from your own YAML instead of the
-      # example seed (copied to /cameras.yaml on first start when absent):
-      # - ./cameras.yaml:/cameras.yaml:ro
+      - ./cameras.yaml:/cameras.yaml:ro
       # Uncomment to override the baked model with a local export
       # (e.g. produced by `make model`):
       # - ./models:/models:ro
@@ -39,3 +37,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    cpus: "2"
+    mem_limit: 2g
+
+  # React + TypeScript frontend (built as its own project in frontend/).
+  # Serves the SPA on FRONTEND_PORT and proxies /api and /snapshots to the
+  # cameras service, so no CORS is involved.
+  frontend:
+    build: ./frontend
+    image: cameras-frontend:latest
+    container_name: cameras-frontend
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      CAMERAS_PORT: ${PORT:-8004}
+    depends_on:
+      - cameras
+
