@@ -19,7 +19,7 @@ PKG_CONFIG_PATH := $(OPENCV_PREFIX)/lib/pkgconfig:$(PKG_CONFIG_PATH)
 LD_LIBRARY_PATH := $(OPENCV_PREFIX)/lib:$(LD_LIBRARY_PATH)
 export PKG_CONFIG_PATH LD_LIBRARY_PATH
 
-.PHONY: build run dev test vet fmt docker clean requirements model model-force clean-model opencv opencv-build
+.PHONY: build run dev test vet fmt docker docker-up docker-down docker-build-opencv clean requirements model model-force clean-model opencv opencv-build
 
 ## build: compile the server binary into bin/
 build:
@@ -144,9 +144,21 @@ opencv-build:
 	@echo "OK: OpenCV $(OPENCV_VERSION) installed in $(OPENCV_PREFIX)"
 	@echo "    Rebuild the binary with: make opencv"
 
-## docker: build the container image
+## docker: build the default (stub) container image
 docker:
-	docker build -t cameras-go .
+	docker compose build
+
+## docker-up: build and start the container in the background (stub detector)
+docker-up:
+	docker compose up -d --build
+
+## docker-down: stop and remove the container (data volume is kept)
+docker-down:
+	docker compose down
+
+## docker-build-opencv: build the native gocv YOLO image (bakes the model)
+docker-build-opencv:
+	docker compose -f docker-compose.yml -f docker-compose.opencv.yml build
 
 ## clean: remove build artifacts
 clean:

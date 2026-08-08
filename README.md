@@ -73,7 +73,7 @@ No cloud lock-in. No vendor telemetry. One binary, one SQLite file, one volume.
 | **Telegram notifier** | Sends timelapses, sends health alarms when a camera goes stale, and posts on scheduled-job panics. >50 MB videos are sent as a text+URL link instead. |
 | **S3-compatible storage** | First-class support for Backblaze B2 (and any S3-compatible endpoint) via `minio-go`. |
 | **SQLite everywhere** | `modernc.org/sqlite` (pure Go, no CGO). WAL + `busy_timeout` PRAGMAs out of the box. The whole DB is one file you can `cp` for backup. |
-| **Single static binary** | `make build` produces a `bin/cameras-go` you can `scp` to a server. `make docker` produces a `FROM scratch` image (~25 MB). |
+| **Single static binary** | `make build` produces a `bin/cameras-go` you can `scp` to a server. `docker compose up -d --build` runs the whole service in one container. |
 | **Embedded SPA** | The web dashboard is `//go:embed`-ed in the binary — no separate static file server. |
 | **YAML seed** | Cameras are idempotently seeded from `cameras.yaml` on every boot, so config is in version control. |
 
@@ -642,7 +642,7 @@ they need atomicity.
 | Vet | `make vet` | `go vet ./...`. |
 | Tests | `make test` | `go test ./... -race -cover`. |
 | gocv build | `make opencv` | `CGO_ENABLED=1 go build -tags opencv`. Requires OpenCV (fails fast with install steps). |
-| Docker image | `make docker` | Multi-stage, `scratch` runtime by default. |
+| Docker image | `make docker-up` | `docker compose` — alpine runtime with ffmpeg by default; `opencv` overlay adds native YOLO. |
 | Clean | `make clean` | `rm -rf bin`. |
 
 ### Code style
@@ -697,33 +697,73 @@ When adding tests for new repositories, use the in-memory SQLite pattern from
 
 ## Docker
 
-The `Dockerfile` is multi-stage with two runtime targets selected by `--build-arg BASE`:
+Plug-and-play via docker compose — no host-side model export or SQLite setup needed.
+
+```bash
+# optional: configure ports/keys (skipped entirely if you use defaults)
+cp .env.example .env
+
+# default build: stub detector (pure Go) + alpine runtime with ffmpeg
+docker compose up -d --build
+
+# native gocv YOLO inference (first build downloads torch, ~1 GB; model
+# is baked into the image at /models/yolov8n.onnx)
+docker compose -f docker-compose.yml -f docker-compose.opencv.yml up -d --build
+```
+
+Open http://localhost:8004. `make docker-up` / `make docker-down` /
+`make docker-build-opencv` are shortcuts for the same commands.
+
+What happens on first start:
+
+- `data/` (DB, snapshots, archives, videos, logs) is created and mounted
+  at `/data`;
+- `cameras.yaml` is seeded from `cameras.example.yaml` (edit the file
+  inside the container or bind-mount your own — see the commented lines
+  in `docker-compose.yml`), then cameras are synced idempotently on every
+  start;
+- `.env` is optional (`env_file` is marked `required: false`); defaults
+  match the application config, `PORT` defaults to 8004.
+
+Image variants (via `docker build --build-arg BASE=... --build-arg BUILD_TAGS=...`):
 
 | Build | Command | Image |
 | --- | --- | --- |
-| Default (stub) | `make docker` | `FROM scratch` — single static binary, ~25 MB. |
-| With ffmpeg | `docker build --build-arg BASE=opencv -t cameras-go .` | `FROM alpine` + ffmpeg + ca-certs. |
-| With OpenCV (gocv YOLO) | `docker build --build-arg BUILD_TAGS=opencv --build-arg BASE=opencv -t cameras-go .` | Adds native gocv + baked-in `models/yolov8n.onnx`; ~150 MB. |
+| Default (stub) | `docker compose build` | alpine + ffmpeg + ca-certs + tzdata, pure-Go binary. |
+| OpenCV (gocv YOLO) | `make docker-build-opencv` | Adds OpenCV shared libs + baked `models/yolov8n.onnx`; bigger, first build downloads torch. |
 
-Run:
+`docker run` equivalent for the stub image:
 
 ```bash
 docker run -d --name cameras-go --restart unless-stopped \
   -p 8004:8004 \
   -v $PWD/data:/data \
-  -v $PWD/cameras.yaml:/cameras.yaml \
   --env-file .env \
   cameras-go
 ```
 
 Production checklist:
 
-- bind-mount `./data` and `./cameras.yaml` as shown above;
-- pass `.env` via `--env-file` (or your secrets manager — never bake it into the image);
-- if you use a self-hosted registry, push the `opencv` tag there for the ffmpeg-enabled
-  build;
-- put the container behind a reverse proxy (Caddy / nginx / Traefik) if you want TLS;
-  the binary itself only does HTTP.
+- bind-mount `./data` (and `./cameras.yaml` if you keep your own camera
+  list) as shown above;
+- pass `.env` via `env_file` in compose or `--env-file` on `docker run`
+  (or your secrets manager — never bake it into the image);
+- to keep the opencv build's model up to date, rebuild with the overlay
+  file (model baking is a build step, so old images keep their old model);
+- put the container behind a reverse proxy (Caddy / nginx / Traefik) if
+  you want TLS; the binary itself only does HTTP.
+
+### When to move off SQLite
+
+SQLite (pure-Go `modernc.org`, WAL mode) is the default and fits this
+single-container workload up to millions of rows. If you ever need
+multi-host deployment, team access, or >~5M rows, PostgreSQL is the
+recommended migration target: repositories already use sqlx `Rebind()`
+and `SQLTime` serializes ISO-8601, so the port is mostly
+`database.go`/`schema.sql` work. MariaDB and MongoDB are not recommended
+(MariaDB adds a container for no functional gain at this scale; MongoDB's
+document model fights the report/join queries and needs a replica set for
+transactions).
 
 ## Telegram & S3 setup
 

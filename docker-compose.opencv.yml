@@ -1,0 +1,15 @@
+# Overlay for native gocv YOLO inference.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.opencv.yml up -d --build
+#
+# Builds the opencv image (alpine + OpenCV + ffmpeg) and bakes an
+# opset-11 yolov8n ONNX export at /models/yolov8n.onnx, so no host-side
+# `make model` step is needed. First build downloads torch (~1 GB); later
+# builds are cached. Mount a local models/ dir to override the baked model.
+services:
+  cameras:
+    build:
+      context: .
+      args:
+        BASE: alpine-opencv
+        BUILD_TAGS: opencv

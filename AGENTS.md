@@ -20,7 +20,9 @@ make build      # compile bin/cameras-go
 make test       # go test ./... -race -cover
 make vet        # go vet ./...
 make opencv     # build with native YOLO via gocv (-tags opencv)
-make docker     # docker build -t cameras-go .
+make docker-up   # docker compose up -d --build (stub detector)
+make docker-build-opencv  # build native YOLO image (docker-compose.opencv.yml)
+make docker-down # docker compose down
 ```
 
 Open http://localhost:8004
@@ -99,9 +101,16 @@ Env vars via `.env` at the working directory (`config.Load()` via caarlos0/env):
 
 ## Docker
 
-`Dockerfile` multi-stage (`FROM scratch` default, `--build-arg BASE=opencv` for
-an alpine image with ffmpeg). Run with `-v $PWD/data:/data -v
-$PWD/cameras.yaml:/cameras.yaml` and the env vars above.
+Plug-and-play `docker compose` (see `docker-compose.yml`): alpine runtime
+with ffmpeg, `./data` mounted at `/data`, `.env` optional (`required:
+false`), `cameras.yaml` seeded from `cameras.example.yaml` by
+`docker/entrypoint.sh` on first start. `Dockerfile` multi-stage: default
+`BASE=alpine` (stub detector, pure Go); `BASE=alpine-opencv` +
+`BUILD_TAGS=opencv` (via `docker-compose.opencv.yml` overlay) adds OpenCV
+libs and bakes an opset-11 yolov8n ONNX export (build-time `model-builder`
+stage — no host-side `make model` needed). Keep `BASE=opencv` working as
+an alias. SQLite stays the default; see README "When to move off SQLite"
+for the PostgreSQL migration guidance.
 
 ## Dependencies
 

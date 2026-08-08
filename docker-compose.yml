@@ -1,31 +1,40 @@
-# Camera monitor — docker-compose service.
+# Camera monitor — plug-and-play docker compose.
 #
-# Default: builds the opencv image (native gocv YOLO + ffmpeg) and runs
-# the service on PORT from .env (default 8004). The YOLO model is the
-# opset-11 export from `make model` mounted at /models.
+# Default: stub detector (pure Go, no OpenCV) on an alpine runtime with
+# ffmpeg. Works with zero host files beyond .env (which is optional).
 #
-# To run the stub (no OpenCV) build instead:
-#   docker compose build --build-arg BUILD_TAGS= cameras
+# For native YOLO inference add the opencv overlay (bakes the model, so
+# no host-side `make model` step):
+#   docker compose -f docker-compose.yml -f docker-compose.opencv.yml up -d --build
 services:
   cameras:
     build:
       context: .
       args:
         BASE: alpine
-        BUILD_TAGS: opencv
+        BUILD_TAGS: ""
     image: cameras-go:latest
     container_name: cameras-go
     restart: unless-stopped
+    init: true
+    stop_grace_period: 15s
     ports:
       - "${PORT:-8004}:${PORT:-8004}"
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      YOLO_MODEL_PATH: ${YOLO_MODEL_PATH:-models/yolov8n.onnx}
     volumes:
       - ./data:/data
-      - ./cameras.yaml:/cameras.yaml:ro
-      - ./models:/models:ro
+      # Uncomment to manage cameras from your own YAML instead of the
+      # example seed (copied to /cameras.yaml on first start when absent):
+      # - ./cameras.yaml:/cameras.yaml:ro
+      # Uncomment to override the baked model with a local export
+      # (e.g. produced by `make model`):
+      # - ./models:/models:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:${PORT:-8004}/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:${PORT:-8004}/api/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
