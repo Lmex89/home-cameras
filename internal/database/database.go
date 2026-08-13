@@ -68,6 +68,9 @@ func migrate(ctx context.Context, db *sqlx.DB) error {
 	if err := migrateAnalysisTables(ctx, tx); err != nil {
 		return err
 	}
+	if err := migrateCameraTypeColumn(ctx, tx); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -187,6 +190,27 @@ CREATE TABLE IF NOT EXISTS snapshot_analyses (
     FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE,
     UNIQUE(snapshot_id, model_name)
 )`
+
+// migrateCameraTypeColumn adds the camera_type and device_path columns
+// to the cameras table when missing (forward migration for USB camera
+// support).
+func migrateCameraTypeColumn(ctx context.Context, tx *sqlx.Tx) error {
+	cols, err := columnNames(ctx, tx, "cameras")
+	if err != nil {
+		return err
+	}
+	if !cols["camera_type"] {
+		if _, err := tx.ExecContext(ctx, "ALTER TABLE cameras ADD COLUMN camera_type TEXT NOT NULL DEFAULT 'ip'"); err != nil {
+			return err
+		}
+	}
+	if !cols["device_path"] {
+		if _, err := tx.ExecContext(ctx, "ALTER TABLE cameras ADD COLUMN device_path TEXT"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // PingWithTimeout verifies DB health with a bounded deadline.
 func PingWithTimeout(ctx context.Context, db *sqlx.DB) error {

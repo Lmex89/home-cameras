@@ -5,6 +5,7 @@ import type { CameraWithLastSnapshot, Manifest } from '../api/types';
 import { AmbientBackground } from '../components/Ambient';
 import { Lightbox } from '../components/Lightbox';
 import type { LightboxItem } from '../components/Lightbox';
+import { LiveStream } from '../components/LiveStream';
 import { MobileDashboard } from '../components/MobileDashboard';
 import type { MobileCamera } from '../components/MobileDashboard';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [pageSize, setPageSize] = useState(10);
   const [curPage, setCurPage] = useState(1);
   const [videoBusy, setVideoBusy] = useState(false);
+  const [streamingCamId, setStreamingCamId] = useState<number | null>(null);
   const [lb, setLb] = useState<{ items: LightboxItem[]; index: number } | null>(null);
   const [now, setNow] = useState(() => new Date());
 
@@ -139,11 +141,13 @@ export default function Dashboard() {
   const openCamera = useCallback((camId: number) => {
     setSelectedId(camId);
     setCurPage(1);
+    setStreamingCamId(null);
   }, []);
 
   const closePanel = useCallback(() => {
     setSelectedId(null);
     setDateInput('');
+    setStreamingCamId(null);
   }, []);
 
   const openLightbox = useCallback((items: SnapView[], index: number) => {
@@ -243,6 +247,8 @@ export default function Dashboard() {
     onRequestVideo: requestVideo,
     onOpenLightbox: openLightbox,
     onClose: closePanel,
+    streamingCamId,
+    onToggleStream: (camId: number) => setStreamingCamId(prev => prev === camId ? null : camId),
   };
 
   if (isMobile) {
@@ -492,6 +498,8 @@ function CameraDetailPanel({
   allSnaps,
   pageSnaps,
   videoBusy,
+  streamingCamId,
+  onToggleStream,
   onDateChange,
   onHourChange,
   onPageSizeChange,
@@ -510,6 +518,8 @@ function CameraDetailPanel({
   allSnaps: SnapView[];
   pageSnaps: PageSnaps;
   videoBusy: boolean;
+  streamingCamId: number | null;
+  onToggleStream: (camId: number) => void;
   onDateChange: (date: string) => void;
   onHourChange: (hour: string) => void;
   onPageSizeChange: (size: number) => void;
@@ -599,25 +609,44 @@ function CameraDetailPanel({
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-[calc(64px+env(safe-area-inset-bottom,0px))] md:pb-4">
-            <div className={`relative mb-3 overflow-hidden rounded-xl border border-edge bg-surface-2 ${selectedCam.last_snapshot ? '' : 'hidden'}`}>
-              {selectedCam.last_snapshot && (
-                <>
-                  <img
-                    src={`${imgPath(selectedCam.last_snapshot.image_path)}?_=${Date.now()}`}
-                    alt=""
-                    className="aspect-video w-full object-cover"
-                  />
-                  <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-6">
-                    <span className="font-mono text-[10px] tabular-nums text-ink-dim">
-                      {formatTimeShort(selectedCam.last_snapshot.captured_at)}
-                    </span>
-                    <span className="font-mono text-[10px] font-bold tabular-nums text-ok">
-                      {timeAgo(selectedCam.last_snapshot.captured_at)}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
+            {streamingCamId === selectedCam.id ? (
+              <LiveStream cameraId={selectedCam.id} className="mb-3 aspect-video" />
+            ) : (
+              <div className={`relative mb-3 overflow-hidden rounded-xl border border-edge bg-surface-2 ${selectedCam.last_snapshot ? '' : 'hidden'}`}>
+                {selectedCam.last_snapshot && (
+                  <>
+                    <img
+                      src={`${imgPath(selectedCam.last_snapshot.image_path)}?_=${Date.now()}`}
+                      alt=""
+                      className="aspect-video w-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-6">
+                      <span className="font-mono text-[10px] tabular-nums text-ink-dim">
+                        {formatTimeShort(selectedCam.last_snapshot.captured_at)}
+                      </span>
+                      <span className="font-mono text-[10px] font-bold tabular-nums text-ok">
+                        {timeAgo(selectedCam.last_snapshot.captured_at)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {selectedCam.id !== undefined && (
+              <div className="mb-3 flex gap-2">
+                <button
+                  onClick={() => onToggleStream(selectedCam.id)}
+                  className={`rounded-lg px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] transition-all active:scale-95 ${
+                    streamingCamId === selectedCam.id
+                      ? 'border border-danger/40 bg-danger-soft text-danger hover:bg-danger/20'
+                      : 'border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20'
+                  }`}
+                >
+                  {streamingCamId === selectedCam.id ? '■ Stop Live' : '▶ Live'}
+                </button>
+              </div>
+            )}
 
             <div className="mb-3 flex flex-wrap gap-1.5">
               <StatPill label="TOTAL" value={String(selectedCam.total_snapshots)} />

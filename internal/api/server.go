@@ -38,6 +38,7 @@ type Deps struct {
 	Notifier *telegram.Notifier
 	Storage  *storage.S3
 	Sched    *scheduler.Scheduler
+	StreamSvc *service.StreamService
 
 	CameraSvc   *service.CameraService
 	SnapshotSvc *service.SnapshotService
@@ -89,12 +90,12 @@ func (s *Server) Router() http.Handler {
 		r.Get("/healthz", s.handleHealthz)
 		r.Get("/data/manifest.json", s.handleManifest)
 
-		r.Route("/cameras", s.camerasRoutes)
-		r.Route("/snapshots", s.snapshotsRoutes)
-		r.Route("/report", s.reportRoutes)
-		r.Route("/videos", s.videosRoutes)
-		r.Route("/reviews", s.reviewsRoutes)
-		r.Route("/retention", s.retentionRoutes)
+	r.Route("/cameras", s.camerasRoutes)
+	r.Route("/snapshots", s.snapshotsRoutes)
+	r.Route("/report", s.reportRoutes)
+	r.Route("/videos", s.videosRoutes)
+	r.Route("/reviews", s.reviewsRoutes)
+	r.Route("/retention", s.retentionRoutes)
 	})
 	return r
 }

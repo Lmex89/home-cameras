@@ -24,11 +24,12 @@ func openSeedDB(t *testing.T) *sqlx.DB {
 	if _, err := db.Exec(`
 CREATE TABLE cameras (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL, host TEXT NOT NULL,
+    name TEXT NOT NULL, camera_type TEXT NOT NULL DEFAULT 'ip',
+    host TEXT NOT NULL DEFAULT '',
     port INTEGER NOT NULL DEFAULT 80,
     username TEXT NOT NULL DEFAULT '',
     password TEXT NOT NULL DEFAULT '',
-    profile_token TEXT, snapshot_url TEXT,
+    profile_token TEXT, snapshot_url TEXT, device_path TEXT,
     interval_seconds INTEGER NOT NULL DEFAULT 60,
     enabled BOOLEAN NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

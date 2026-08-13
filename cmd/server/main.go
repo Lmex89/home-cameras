@@ -97,7 +97,8 @@ func setupTimezone(tz string) *time.Location {
 //	cfg: Application config (capture timeout).
 //	db: Database pool.
 //	snapshotSvc: The snapshot service.
-func captureJob(ctx context.Context, cameraID int64, cfg config.Config, db *sqlx.DB, snapshotSvc *service.SnapshotService) {
+//	streamSvc: The stream service (to skip USB cameras that are streaming).
+func captureJob(ctx context.Context, cameraID int64, cfg config.Config, db *sqlx.DB, snapshotSvc *service.SnapshotService, streamSvc *service.StreamService) {
 	repo := repository.NewCameraRepository(db)
 	cam, err := repo.GetByID(ctx, cameraID)
 	if err != nil {
@@ -105,6 +106,10 @@ func captureJob(ctx context.Context, cameraID int64, cfg config.Config, db *sqlx
 		return
 	}
 	if !cam.Enabled {
+		return
+	}
+	if cam.CameraType == "usb" && streamSvc.IsStreaming(cameraID) {
+		log.Debug().Int64("camera_id", cameraID).Msg("capture job: skipped (USB camera is streaming)")
 		return
 	}
 	cctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.CaptureTimeoutSeconds)*time.Second)
@@ -332,11 +337,12 @@ func main() {
 	analysisSvc := service.NewAnalysisService(cfg, db, detector)
 	retentionSvc := service.NewRetentionService(cfg, db)
 	timelapseSvc := service.NewTimelapseService(cfg, db, snapsRepo)
+	streamSvc := service.NewStreamService(onvifClient, cfg.StreamFPS)
 
 	// Scheduler with job callbacks.
 	var sched *scheduler.Scheduler
 	sched = scheduler.New(cfg, scheduler.Options{
-		CameraCapture: func(c context.Context, id int64) { captureJob(c, id, cfg, db, snapshotSvc) },
+		CameraCapture: func(c context.Context, id int64) { captureJob(c, id, cfg, db, snapshotSvc, streamSvc) },
 		AnalysisTick:  func(c context.Context) { analysisTick(c, analysisSvc) },
 		RetentionRun:  func(c context.Context) { retentionJob(c, sched, retentionSvc) },
 		TimelapseRun: func(c context.Context, day time.Time) {
@@ -371,6 +377,7 @@ func main() {
 		Notifier:    notifier,
 		Storage:     storageSvc,
 		Sched:       sched,
+		StreamSvc:   streamSvc,
 		CameraSvc:   cameraSvc,
 		SnapshotSvc: snapshotSvc,
 		AnalysisSvc: analysisSvc,
@@ -390,6 +397,7 @@ func main() {
 		<-stop
 		log.Info().Msg("shutting down")
 		sched.Stop()
+		streamSvc.Shutdown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

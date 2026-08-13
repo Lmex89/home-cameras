@@ -108,16 +108,19 @@ func (t NullSQLTime) Value() (driver.Value, error) {
 	return t.SQLTime.Value()
 }
 
-// Camera is an ONVIF-capable camera under monitoring.
+// Camera is a camera under monitoring. CameraType is "ip" for ONVIF/RTSP
+// cameras or "usb" for V4L2 devices (device_path points to /dev/videoN).
 type Camera struct {
 	ID              int64   `db:"id" json:"id"`
 	Name            string  `db:"name" json:"name"`
+	CameraType      string  `db:"camera_type" json:"camera_type"`
 	Host            string  `db:"host" json:"host"`
 	Port            int     `db:"port" json:"port"`
 	Username        string  `db:"username" json:"username"`
 	Password        string  `db:"password" json:"password"`
 	ProfileToken    *string `db:"profile_token" json:"profile_token"`
 	SnapshotURL     *string `db:"snapshot_url" json:"snapshot_url"`
+	DevicePath      *string `db:"device_path" json:"device_path"`
 	IntervalSeconds int     `db:"interval_seconds" json:"interval_seconds"`
 	Enabled         bool    `db:"enabled" json:"enabled"`
 	CreatedAt       SQLTime `db:"created_at" json:"created_at"`

@@ -97,7 +97,8 @@ func TestCaptureJobSuccess(t *testing.T) {
 
 	snaps := repository.NewSnapshotRepository(db)
 	svc := service.NewSnapshotService(cfg, db, snaps, cams, onvif.NewFromConfig(cfg))
-	captureJob(context.Background(), cam.ID, cfg, db, svc)
+	streamSvc := service.NewStreamService(onvif.NewFromConfig(cfg), cfg.StreamFPS)
+	captureJob(context.Background(), cam.ID, cfg, db, svc, streamSvc)
 
 	last, err := snaps.GetLastByCamera(context.Background(), cam.ID)
 	if err != nil || last == nil {
@@ -114,8 +115,9 @@ func TestCaptureJobGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := service.NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, onvif.NewFromConfig(cfg))
-	captureJob(context.Background(), cam.ID, cfg, db, svc) // disabled -> no-op
-	captureJob(context.Background(), 999, cfg, db, svc)    // missing -> warn
+	streamSvc := service.NewStreamService(onvif.NewFromConfig(cfg), cfg.StreamFPS)
+	captureJob(context.Background(), cam.ID, cfg, db, svc, streamSvc) // disabled -> no-op
+	captureJob(context.Background(), 999, cfg, db, svc, streamSvc)    // missing -> warn
 }
 
 // TestAnalysisTick verifies the empty-queue tick returns cleanly.

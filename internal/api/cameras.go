@@ -25,6 +25,7 @@ func (s *Server) camerasRoutes(r chi.Router) {
 		r.Put("/", s.updateCamera)
 		r.Delete("/", s.deleteCamera)
 		r.Post("/snapshot", s.forceSnapshot)
+		r.Get("/stream", s.streamCamera)
 	})
 }
 
@@ -65,13 +66,27 @@ func (s *Server) createCamera(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if trimSpaces(payload.Host) == "" {
-		writeError(w, http.StatusBadRequest, "host is required")
+	if payload.CameraType == "" {
+		payload.CameraType = "ip"
+	}
+	if payload.CameraType != "ip" && payload.CameraType != "usb" {
+		writeError(w, http.StatusBadRequest, "camera_type must be 'ip' or 'usb'")
 		return
 	}
-	if payload.Port < 1 || payload.Port > 65535 {
-		writeError(w, http.StatusBadRequest, "port must be between 1 and 65535")
-		return
+	if payload.CameraType == "usb" {
+		if payload.DevicePath == nil || trimSpaces(*payload.DevicePath) == "" {
+			writeError(w, http.StatusBadRequest, "device_path is required for USB cameras")
+			return
+		}
+	} else {
+		if trimSpaces(payload.Host) == "" {
+			writeError(w, http.StatusBadRequest, "host is required for IP cameras")
+			return
+		}
+		if payload.Port < 1 || payload.Port > 65535 {
+			writeError(w, http.StatusBadRequest, "port must be between 1 and 65535")
+			return
+		}
 	}
 	if payload.IntervalSeconds == 0 {
 		payload.IntervalSeconds = s.deps.Cfg.DefaultIntervalSeconds

@@ -25,3 +25,9 @@ cameras:
     snapshot_url: "http://192.168.1.102/cgi-bin/snapshot.cgi"
     interval_seconds: 300
     enabled: true
+
+  - name: "USB Camera"
+    camera_type: "usb"
+    device_path: "/dev/video0"
+    interval_seconds: 10
+    enabled: true

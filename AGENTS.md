@@ -1,8 +1,9 @@
-# Cameras — ONVIF snapshot monitor (Go)
+# Cameras — ONVIF + USB snapshot monitor (Go)
 
 Single-implementation repo: the Go service in `cmd/` + `internal/`. The legacy
 Python/FastAPI app was removed; this port is feature-parity with the same
-SQLite schema and env-var names, deployed as one binary.
+SQLite schema and env-var names, deployed as one binary. Supports both IP
+cameras (ONVIF/RTSP) and USB cameras (V4L2).
 
 ## 🔴 ABSOLUTE: Codegraph-only lookup
 
@@ -78,7 +79,7 @@ Google-style sections (`Args:`, `Returns:`, `Raises:`).
 | Step | What happens |
 |---|---|
 | Startup | init DB from `internal/database/schema.sql` + legacy migrations → seed from `cameras.yaml` → start scheduler (`scheduler.New` + `sched.Start()`) |
-| Snapshots | Per-camera interval job → capture tries: direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HMSS.jpg` |
+| Snapshots | Per-camera interval job → capture tries: IP cameras use direct URL → ONVIF `GetSnapshotUri` → RTSP+ffmpeg; USB cameras use V4L2+ffmpeg → saved to `data/snapshots/{camera_id}/Y/m/d/HMSS.jpg` |
 | Analysis  | After each successful capture an `analysis_job` is enqueued; a poller (every 30s) processes pending jobs (`AnalysisService.ProcessNextBatch`). Detector is a singleton; stub mode when the model is missing. |
 | Review    | `applyReviewRules` flags snapshots (person after hours, high count, unexpected objects). Surfaces in `/data/manifest.json` and `/api/reviews/pending`. |
 | Retention | Daily 06:00 cron → zips raw files older than `SNAPSHOT_ZIP_AFTER_DAYS` into `data/archives/`, deletes records/archives past `SNAPSHOT_RETENTION_DAYS` / `VIDEO_RETENTION_DAYS`. Pauses capture/analysis jobs while running. Also `POST /api/retention/run`. |
@@ -103,13 +104,15 @@ Env vars via `.env` at the working directory (`config.Load()` via caarlos0/env):
 Plug-and-play `docker compose` (see `docker-compose.yml`): alpine runtime
 with ffmpeg, `./data` mounted at `/data`, `.env` optional (`required:
 false`), `cameras.yaml` seeded from `cameras.example.yaml` by
-`docker/entrypoint.sh` on first start. `Dockerfile` multi-stage: default
-`BASE=alpine` (stub detector, pure Go); `BASE=alpine-opencv` +
-`BUILD_TAGS=opencv` (via `docker-compose.opencv.yml` overlay) adds OpenCV
-libs and bakes an opset-11 yolov8n ONNX export (build-time `model-builder`
-stage — no host-side `make model` needed). Keep `BASE=opencv` working as
-an alias. SQLite stays the default; see README "When to move off SQLite"
-for the PostgreSQL migration guidance.
+`docker/entrypoint.sh` on first start. USB cameras require `devices:`
+passthrough in `docker-compose.yml` (already configured for `/dev/video0`
+and `/dev/video1`). `Dockerfile` multi-stage: default `BASE=alpine` (stub
+detector, pure Go); `BASE=alpine-opencv` + `BUILD_TAGS=opencv` (via
+`docker-compose.opencv.yml` overlay) adds OpenCV libs and bakes an
+opset-11 yolov8n ONNX export (build-time `model-builder` stage — no
+host-side `make model` needed). Keep `BASE=opencv` working as an alias.
+SQLite stays the default; see README "When to move off SQLite" for the
+PostgreSQL migration guidance.
 
 ## Frontend (React + TypeScript)
 
@@ -158,7 +161,7 @@ plain hooks + fetch (no data-fetch library); the dashboard polls
 ## Dependencies
 
 - chi/v5, sqlx, modernc.org/sqlite (pure Go, no CGO), caarlos0/env, zerolog, robfig/cron/v3, use-go/onvif, go-telegram-bot-api (via raw HTTP in the notifier), minio-go, fogleman/gg + golang.org/x/image (frame annotation), gopkg.in/yaml.v3, gocv (optional, `-tags opencv`)
-- ffmpeg (RTSP frame grab + timelapse assembly)
+- ffmpeg (RTSP frame grab + V4L2 USB capture + timelapse assembly)
 
 ## Codegraph (code context engine)
 

@@ -123,3 +123,7 @@ export const api = {
 export function imgPath(imagePath: string): string {
   return IMG_BASE + imagePath;
 }
+
+export function streamUrl(cameraId: number): string {
+  return `/api/cameras/${cameraId}/stream`;
+}

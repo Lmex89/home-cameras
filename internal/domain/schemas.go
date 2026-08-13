@@ -14,12 +14,14 @@ import (
 // CameraCreate is the payload for creating a camera.
 type CameraCreate struct {
 	Name            string  `json:"name"`
+	CameraType      string  `json:"camera_type"`
 	Host            string  `json:"host"`
 	Port            int     `json:"port"`
 	Username        string  `json:"username"`
 	Password        string  `json:"password"`
 	ProfileToken    *string `json:"profile_token"`
 	SnapshotURL     *string `json:"snapshot_url"`
+	DevicePath      *string `json:"device_path"`
 	IntervalSeconds int     `json:"interval_seconds"`
 	Enabled         bool    `json:"enabled"`
 }
@@ -28,12 +30,14 @@ type CameraCreate struct {
 // fields distinguish "unset" from "explicitly cleared".
 type CameraUpdate struct {
 	Name            *string `json:"name"`
+	CameraType      *string `json:"camera_type"`
 	Host            *string `json:"host"`
 	Port            *int    `json:"port"`
 	Username        *string `json:"username"`
 	Password        *string `json:"password"`
 	ProfileToken    *string `json:"profile_token"`
 	SnapshotURL     *string `json:"snapshot_url"`
+	DevicePath      *string `json:"device_path"`
 	IntervalSeconds *int    `json:"interval_seconds"`
 	Enabled         *bool   `json:"enabled"`
 }

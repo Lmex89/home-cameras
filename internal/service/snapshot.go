@@ -85,8 +85,11 @@ func NewSnapshotService(cfg config.Config, db *sqlx.DB, snaps *repository.Snapsh
 	}
 }
 
-// Capture runs the three-tier capture strategy for a camera and
-// persists a snapshot record (success or error) atomically.
+// Capture runs the capture strategy for a camera and persists a
+// snapshot record (success or error) atomically. For IP cameras, it
+// follows the legacy three-tier fallback chain: direct snapshot URL ->
+// ONVIF GetSnapshotUri -> RTSP+ffmpeg frame grab. For USB cameras, it
+// uses V4L2+ffmpeg.
 //
 // Args:
 //
@@ -97,6 +100,24 @@ func NewSnapshotService(cfg config.Config, db *sqlx.DB, snaps *repository.Snapsh
 //
 //	The persisted Snapshot. Status is "success" or "error".
 func (s *SnapshotService) Capture(ctx context.Context, cam domain.Camera) (*domain.Snapshot, error) {
+	if cam.CameraType == "usb" {
+		return s.captureUSB(ctx, cam)
+	}
+	return s.captureIP(ctx, cam)
+}
+
+// captureIP runs the three-tier IP camera capture strategy (direct URL
+// -> ONVIF GetSnapshotUri -> RTSP+ffmpeg).
+//
+// Args:
+//
+//	ctx: Request context (timeouts propagate to HTTP and ffmpeg).
+//	cam: The IP camera to capture from.
+//
+// Returns:
+//
+//	The persisted Snapshot. Status is "success" or "error".
+func (s *SnapshotService) captureIP(ctx context.Context, cam domain.Camera) (*domain.Snapshot, error) {
 	logger := log.With().Str("camera", cam.Name).Str("host", cam.Host).Logger()
 	var lastErr string
 
@@ -153,6 +174,41 @@ func (s *SnapshotService) Capture(ctx context.Context, cam domain.Camera) (*doma
 
 	logger.Error().Str("error", lastErr).Msg("all capture methods failed")
 	return s.persist(ctx, cam, "", time.Now(), 0, "error", &lastErr)
+}
+
+// captureUSB grabs a single JPEG frame from a V4L2 USB camera using
+// ffmpeg.
+//
+// Args:
+//
+//	ctx: Request context.
+//	cam: Camera whose device_path points to a /dev/videoN device.
+//
+// Returns:
+//
+//	The persisted Snapshot.
+func (s *SnapshotService) captureUSB(ctx context.Context, cam domain.Camera) (*domain.Snapshot, error) {
+	logger := log.With().Str("camera", cam.Name).Logger()
+	if cam.DevicePath == nil || *cam.DevicePath == "" {
+		errMsg := "device_path is required for USB cameras"
+		logger.Error().Msg(errMsg)
+		return s.persist(ctx, cam, "", time.Now(), 0, "error", &errMsg)
+	}
+	devicePath := *cam.DevicePath
+	logger.Info().Str("device", devicePath).Msg("trying V4L2 capture")
+	data, err := s.captureV4L2(ctx, cam, devicePath)
+	if err != nil {
+		errMsg := err.Error()
+		logger.Error().Str("error", errMsg).Msg("V4L2 capture failed")
+		return s.persist(ctx, cam, "", time.Now(), 0, "error", &errMsg)
+	}
+	relPath, capturedAt := s.saveImage(cam, data)
+	snap, perr := s.persist(ctx, cam, relPath, capturedAt, int64(len(data)), "success", nil)
+	if perr != nil {
+		return nil, perr
+	}
+	logger.Info().Str("path", relPath).Msg("V4L2 snapshot saved")
+	return snap, nil
 }
 
 // persist inserts the snapshot row inside a transaction, then enqueues
@@ -360,6 +416,59 @@ func (s *SnapshotService) captureRTSP(ctx context.Context, cam domain.Camera) ([
 		}
 		log.Debug().Str("camera", cam.Name).Str("stderr", msg).Msg("ffmpeg stderr")
 		return nil, fmt.Errorf("ffmpeg failed: %s", msg)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("ffmpeg returned no data")
+	}
+	return out, nil
+}
+
+// captureV4L2 grabs a single JPEG frame from a V4L2 device using
+// ffmpeg with the v4l2 input format at full HD resolution (1920x1080)
+// with maximum quality.
+//
+// Args:
+//
+//	ctx: Request context.
+//	cam: Camera (used for logging).
+//	devicePath: Path to the V4L2 device (e.g., /dev/video0).
+//
+// Returns:
+//
+//	The JPEG bytes captured from the device.
+//
+// Raises:
+//
+//	Error: When ffmpeg fails (timeout 30s).
+func (s *SnapshotService) captureV4L2(ctx context.Context, cam domain.Camera, devicePath string) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(cctx, "ffmpeg",
+		"-f", "v4l2",
+		"-input_format", "mjpeg",
+		"-video_size", "1920x1080",
+		"-framerate", "30",
+		"-i", devicePath,
+		"-vframes", "1",
+		"-q:v", "1",
+		"-f", "image2pipe",
+		"-vcodec", "mjpeg",
+		"-",
+	)
+	stderr := new(strings.Builder)
+	cmd.Stderr = stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 300 {
+			msg = msg[len(msg)-300:]
+		}
+		if cctx.Err() != nil {
+			return nil, errors.New("ffmpeg timed out after 30s")
+		}
+		log.Debug().Str("camera", cam.Name).Str("stderr", msg).Msg("ffmpeg stderr")
+		return nil, fmt.Errorf("ffmpeg V4L2 failed: %s", msg)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("ffmpeg returned no data")

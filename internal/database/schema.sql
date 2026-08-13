@@ -1,13 +1,15 @@
 CREATE TABLE IF NOT EXISTS cameras (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    host TEXT NOT NULL,
+    camera_type TEXT NOT NULL DEFAULT 'ip',
+    host TEXT NOT NULL DEFAULT '',
     port INTEGER NOT NULL DEFAULT 80,
     username TEXT NOT NULL DEFAULT '',
     password TEXT NOT NULL DEFAULT '',
     profile_token TEXT,
     interval_seconds INTEGER NOT NULL DEFAULT 60,
     snapshot_url TEXT,
+    device_path TEXT,
     enabled BOOLEAN NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

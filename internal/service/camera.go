@@ -38,14 +38,20 @@ func (s *CameraService) Get(ctx context.Context, id int64) (*domain.Camera, erro
 
 // Create persists a new camera and returns it with its id.
 func (s *CameraService) Create(ctx context.Context, data domain.CameraCreate) (*domain.Camera, error) {
+	cameraType := data.CameraType
+	if cameraType == "" {
+		cameraType = "ip"
+	}
 	cam := &domain.Camera{
 		Name:            data.Name,
+		CameraType:      cameraType,
 		Host:            data.Host,
 		Port:            data.Port,
 		Username:        data.Username,
 		Password:        data.Password,
 		ProfileToken:    data.ProfileToken,
 		SnapshotURL:     data.SnapshotURL,
+		DevicePath:      data.DevicePath,
 		IntervalSeconds: data.IntervalSeconds,
 		Enabled:         data.Enabled,
 	}
@@ -60,6 +66,9 @@ func (s *CameraService) Update(ctx context.Context, id int64, data domain.Camera
 	values := map[string]any{}
 	if data.Name != nil {
 		values["name"] = *data.Name
+	}
+	if data.CameraType != nil {
+		values["camera_type"] = *data.CameraType
 	}
 	if data.Host != nil {
 		values["host"] = *data.Host
@@ -78,6 +87,9 @@ func (s *CameraService) Update(ctx context.Context, id int64, data domain.Camera
 	}
 	if data.SnapshotURL != nil {
 		values["snapshot_url"] = *data.SnapshotURL
+	}
+	if data.DevicePath != nil {
+		values["device_path"] = *data.DevicePath
 	}
 	if data.IntervalSeconds != nil {
 		values["interval_seconds"] = *data.IntervalSeconds

@@ -19,12 +19,14 @@ import (
 // yamlCamera mirrors one entry of the cameras.yaml "cameras" list.
 type yamlCamera struct {
 	Name            string  `yaml:"name"`
+	CameraType      string  `yaml:"camera_type"`
 	Host            string  `yaml:"host"`
 	Port            int     `yaml:"port"`
 	Username        string  `yaml:"username"`
 	Password        string  `yaml:"password"`
 	ProfileToken    *string `yaml:"profile_token"`
 	SnapshotURL     *string `yaml:"snapshot_url"`
+	DevicePath      *string `yaml:"device_path"`
 	IntervalSeconds int     `yaml:"interval_seconds"`
 	Enabled         bool    `yaml:"enabled"`
 }
@@ -89,13 +91,19 @@ func FromYAML(ctx context.Context, db *sqlx.DB, yamlPath string, defaultInterval
 		if interval == 0 {
 			interval = defaultInterval
 		}
+		cameraType := raw.CameraType
+		if cameraType == "" {
+			cameraType = "ip"
+		}
 		values := map[string]any{
+			"camera_type":      cameraType,
 			"host":             raw.Host,
 			"port":             raw.Port,
 			"username":         raw.Username,
 			"password":         raw.Password,
 			"profile_token":    raw.ProfileToken,
 			"snapshot_url":     raw.SnapshotURL,
+			"device_path":      raw.DevicePath,
 			"interval_seconds": interval,
 			"enabled":          raw.Enabled,
 		}
@@ -107,12 +115,14 @@ func FromYAML(ctx context.Context, db *sqlx.DB, yamlPath string, defaultInterval
 		} else {
 			newCam := &domain.Camera{
 				Name:            raw.Name,
+				CameraType:      cameraType,
 				Host:            raw.Host,
 				Port:            raw.Port,
 				Username:        raw.Username,
 				Password:        raw.Password,
 				ProfileToken:    raw.ProfileToken,
 				SnapshotURL:     raw.SnapshotURL,
+				DevicePath:      raw.DevicePath,
 				IntervalSeconds: interval,
 				Enabled:         raw.Enabled,
 			}

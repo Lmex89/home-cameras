@@ -5,10 +5,11 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Code Graph](https://img.shields.io/badge/codegraph-indexed-7c3aed)](https://github.com/isink17/codegraph)
 
-ONVIF-compatible camera snapshot monitoring system with local ML analysis. Periodically
-captures snapshots from IP cameras, runs YOLO object detection, flags unusual events for
-human review, generates annotated daily timelapse videos, and ships a self-contained
-web dashboard. Single static Go binary — no CGO, no Python, no service mesh.
+Camera snapshot monitoring system with local ML analysis. Supports both IP cameras
+(ONVIF/RTSP) and USB cameras (V4L2). Periodically captures snapshots, runs YOLO
+object detection, flags unusual events for human review, generates annotated daily
+timelapse videos, and ships a self-contained web dashboard. Single static Go binary
+— no CGO, no Python, no service mesh.
 
 This repository is a complete Go port of a prior Python/FastAPI implementation. It
 preserves the SQLite schema and env-var names, but ships as one binary and removes the
@@ -53,7 +54,8 @@ daily digest** of what happened.
 
 This service runs entirely on a single host:
 
-- pulls snapshots from any ONVIF-compatible camera (or via direct URL / RTSP fallback),
+- pulls snapshots from any ONVIF-compatible IP camera (or via direct URL / RTSP fallback),
+  or from USB cameras via V4L2,
 - runs a small YOLO model locally to detect people, vehicles and other objects,
 - flags suspicious events for human review,
 - archives the rest for `SNAPSHOT_RETENTION_DAYS`,
@@ -65,7 +67,7 @@ No cloud lock-in. No vendor telemetry. One binary, one SQLite file, one volume.
 
 | Area | What you get |
 | --- | --- |
-| **ONVIF client** | Connects to cameras via ONVIF, auto-selects a profile, falls back to a configurable `snapshot_url`, and finally to RTSP+ffmpeg if the camera doesn't expose `GetSnapshotUri`. |
+| **Multi-protocol capture** | IP cameras: ONVIF auto-profile selection, configurable `snapshot_url`, RTSP+ffmpeg fallback. USB cameras: V4L2+ffmpeg capture from `/dev/videoN` devices. |
 | **Scheduled capture** | Per-camera interval (default 60 s) with **restart-anchored** timers — the schedule survives process restarts. |
 | **Local ML detection** | YOLO runs in-process; default build uses a **stub detector** (no OpenCV needed), opt into native gocv inference with `make opencv`. |
 | **Review rule engine** | Auto-flags persons after hours, high crowd counts, and unexpected object classes; surfaces them in the dashboard and `GET /api/reviews/pending`. |
@@ -290,6 +292,8 @@ Cameras are seeded from `cameras.yaml` in the working directory on every boot. T
 seeder is **idempotent**: cameras present in both YAML and DB are updated, new ones
 are inserted, and cameras missing from the YAML are deleted from the DB.
 
+### IP cameras (ONVIF/RTSP)
+
 ```yaml
 cameras:
   - name: "Patio Trasero"
@@ -322,10 +326,36 @@ cameras:
 profile isn't what you want. `snapshot_url` short-circuits capture entirely (the first
 strategy that succeeds wins; see below).
 
+### USB cameras (V4L2)
+
+```yaml
+cameras:
+  - name: "USB Camera"
+    camera_type: "usb"
+    device_path: "/dev/video0"
+    interval_seconds: 10
+    enabled: true
+```
+
+USB cameras require `camera_type: "usb"` and `device_path` pointing to a V4L2 device
+(typically `/dev/video0`, `/dev/video1`, etc.). The `host` and `port` fields are
+ignored for USB cameras. Capture uses ffmpeg with the `v4l2` input format.
+
+**Docker:** USB cameras require `devices:` passthrough in `docker-compose.yml`:
+```yaml
+devices:
+  - /dev/video0:/dev/video0
+  - /dev/video1:/dev/video1
+```
+
 The `cameras.example.yaml` in the repo has the same shape with placeholders — copy it
 to `cameras.yaml` and edit.
 
 ## Snapshot capture strategy
+
+The capture strategy depends on the camera type:
+
+### IP cameras (`camera_type: "ip"` or omitted)
 
 For every tick of a camera's interval, the service tries the following in order, and
 keeps the first success:
@@ -339,8 +369,29 @@ keeps the first success:
    `exec ffmpeg` to grab a single frame as JPEG. Requires `ffmpeg` on `$PATH`; the
    `opencv` Docker image bundles it.
 
-The first strategy that returns a valid JPEG wins. If all three fail, the snapshot row
-is recorded with `status = 'error'` and an `error_message` describing the last failure.
+### USB cameras (`camera_type: "usb"`)
+
+USB cameras use V4L2 capture via ffmpeg:
+
+```bash
+ffmpeg -f v4l2 -input_format mjpeg -i /dev/video0 -vframes 1 -q:v 1 output.jpg
+```
+
+The `device_path` field must point to a valid V4L2 device (e.g., `/dev/video0`).
+The `host` and `port` fields are ignored for USB cameras.
+
+**Docker:** USB cameras require `devices:` passthrough in `docker-compose.yml`:
+```yaml
+devices:
+  - /dev/video0:/dev/video0
+  - /dev/video1:/dev/video1
+```
+
+### Error handling
+
+The first strategy that returns a valid JPEG wins. If all strategies fail (IP cameras)
+or the V4L2 capture fails (USB cameras), the snapshot row is recorded with
+`status = 'error'` and an `error_message` describing the failure.
 
 ## HTTP API
 

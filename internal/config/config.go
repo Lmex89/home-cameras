@@ -52,6 +52,8 @@ type Config struct {
 	StorageSecretKey        string  `env:"STORAGE_SECRET_KEY" envDefault:""`
 	StoragePublicURL        string  `env:"STORAGE_PUBLIC_URL" envDefault:""`
 	StorageRegion           string  `env:"STORAGE_REGION" envDefault:"us-west-004"`
+	StreamEnabled           bool    `env:"STREAM_ENABLED" envDefault:"true"`
+	StreamFPS               int     `env:"STREAM_FPS" envDefault:"5"`
 
 	DataDir string `env:"DATA_DIR" envDefault:"./data"`
 }
