@@ -220,6 +220,16 @@ Allowed types: `feat`, `fix`, `build`, `chore`, `ci`, `docs`, `style`, `refactor
 Breaking changes: append `!` after type/scope OR add `BREAKING CHANGE:` footer.
 Body explains *why* (not what). Footer references issues or breaking changes.
 
+## Mandatory: Commit hygiene
+
+Every commit MUST follow repository hygiene best practices:
+
+- **Inspect before commit**: run `git status`, `git diff`, and `git diff --cached` before creating a commit.
+- **Stage intentionally**: stage only files that belong to the current change; avoid blanket staging when unrelated work exists.
+- **No generated artifacts**: do NOT commit build outputs or runtime artifacts (binaries, logs, DB files, caches, temp files, local data dirs).
+- **Ignore + untrack correctly**: add generated/local artifacts to `.gitignore`; if already tracked, remove from index with `git rm --cached <path>` and commit that cleanup.
+- **Keep commits focused**: prefer small, atomic commits by concern; avoid “commit all pending changes” style commits.
+
 ## Mandatory: Structured logging (zerolog)
 
 Every log MUST use `github.com/rs/zerolog/log` — never `fmt.Println`, never stdlib `log`.
