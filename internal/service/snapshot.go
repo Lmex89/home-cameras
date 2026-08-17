@@ -427,11 +427,15 @@ func (s *SnapshotService) captureRTSP(ctx context.Context, cam domain.Camera) ([
 // ffmpeg with the v4l2 input format at full HD resolution (1920x1080)
 // with maximum quality.
 //
+// captureV4L2 captures a single frame from a V4L2 USB camera using ffmpeg.
+// It attempts high-res MJPEG capture first (1080p@30fps) and falls back to
+// auto-detected device defaults when hardcoded settings time out or fail.
+//
 // Args:
 //
 //	ctx: Request context.
-//	cam: Camera (used for logging).
-//	devicePath: Path to the V4L2 device (e.g., /dev/video0).
+//	cam: Camera domain model.
+//	devicePath: V4L2 device file path (e.g. /dev/video0).
 //
 // Returns:
 //
@@ -439,12 +443,31 @@ func (s *SnapshotService) captureRTSP(ctx context.Context, cam domain.Camera) ([
 //
 // Raises:
 //
-//	Error: When ffmpeg fails (timeout 30s).
+//	Error: When all ffmpeg V4L2 capture attempts fail or time out.
 func (s *SnapshotService) captureV4L2(ctx context.Context, cam domain.Camera, devicePath string) ([]byte, error) {
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	// Strategy 1: Native auto-detected stream format (prevents UVC probe control mode-switch timeouts)
+	args1 := []string{
+		"-f", "v4l2",
+		"-i", devicePath,
+		"-vframes", "1",
+		"-q:v", "1",
+		"-f", "image2pipe",
+		"-vcodec", "mjpeg",
+		"-",
+	}
+	out, err := execV4L2FFmpeg(ctx, cam, args1, 10*time.Second)
+	if err == nil && len(out) > 0 {
+		return out, nil
+	}
 
-	cmd := exec.CommandContext(cctx, "ffmpeg",
+	log.Debug().
+		Str("camera", cam.Name).
+		Str("device", devicePath).
+		Err(err).
+		Msg("V4L2 native auto-detected capture failed; trying explicit 1080p MJPEG format fallback")
+
+	// Strategy 2: Explicit high-res MJPEG mode (1080p @ 30fps) fallback
+	args2 := []string{
 		"-f", "v4l2",
 		"-input_format", "mjpeg",
 		"-video_size", "1920x1080",
@@ -455,7 +478,43 @@ func (s *SnapshotService) captureV4L2(ctx context.Context, cam domain.Camera, de
 		"-f", "image2pipe",
 		"-vcodec", "mjpeg",
 		"-",
-	)
+	}
+	out2, err2 := execV4L2FFmpeg(ctx, cam, args2, 10*time.Second)
+	if err2 == nil && len(out2) > 0 {
+		log.Info().
+			Str("camera", cam.Name).
+			Str("device", devicePath).
+			Msg("V4L2 capture succeeded with explicit 1080p MJPEG fallback")
+		return out2, nil
+	}
+
+	if err2 != nil {
+		return nil, fmt.Errorf("v4l2 capture failed (auto err: %v; 1080p err: %w)", err, err2)
+	}
+	return nil, errors.New("ffmpeg returned no data from V4L2 device")
+}
+
+// execV4L2FFmpeg executes an ffmpeg command with a per-attempt context timeout.
+//
+// Args:
+//
+//	parentCtx: Parent request context.
+//	cam: Camera domain model for logging.
+//	args: Arguments passed to ffmpeg.
+//	timeout: Per-attempt execution timeout duration.
+//
+// Returns:
+//
+//	Raw stdout bytes returned by ffmpeg.
+//
+// Raises:
+//
+//	Error: On execution error, context timeout, or empty stdout.
+func execV4L2FFmpeg(parentCtx context.Context, cam domain.Camera, args []string, timeout time.Duration) ([]byte, error) {
+	cctx, cancel := context.WithTimeout(parentCtx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cctx, "ffmpeg", args...)
 	stderr := new(strings.Builder)
 	cmd.Stderr = stderr
 	out, err := cmd.Output()
@@ -465,7 +524,7 @@ func (s *SnapshotService) captureV4L2(ctx context.Context, cam domain.Camera, de
 			msg = msg[len(msg)-300:]
 		}
 		if cctx.Err() != nil {
-			return nil, errors.New("ffmpeg timed out after 30s")
+			return nil, fmt.Errorf("ffmpeg timed out after %s", timeout)
 		}
 		log.Debug().Str("camera", cam.Name).Str("stderr", msg).Msg("ffmpeg stderr")
 		return nil, fmt.Errorf("ffmpeg V4L2 failed: %s", msg)

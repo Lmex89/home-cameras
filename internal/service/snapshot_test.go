@@ -215,3 +215,41 @@ func TestSnapshotReadModels(t *testing.T) {
 		t.Fatalf("empty report: %+v %v", empty, err)
 	}
 }
+
+// TestCaptureUSBFail verifies that USB camera capture cleanly records
+// an error when the device path is missing or invalid.
+func TestCaptureUSBFail(t *testing.T) {
+	cfg, db := newTestDB(t)
+	ctx := context.Background()
+
+	cams := repository.NewCameraRepository(db)
+	cam := &domain.Camera{
+		Name: "USB Cam", CameraType: "usb",
+		IntervalSeconds: 60, Enabled: true,
+	}
+	if err := cams.Add(ctx, cam); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, onvif.NewFromConfig(cfg))
+
+	// Missing device_path
+	snap, err := svc.Capture(ctx, *cam)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if snap.Status != "error" {
+		t.Fatalf("status = %q want error", snap.Status)
+	}
+
+	// Invalid device_path
+	invalidDev := "/dev/nonexistent_video99"
+	cam.DevicePath = &invalidDev
+	snap2, err := svc.Capture(ctx, *cam)
+	if err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if snap2.Status != "error" {
+		t.Fatalf("status = %q want error", snap2.Status)
+	}
+}

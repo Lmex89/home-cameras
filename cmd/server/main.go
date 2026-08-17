@@ -133,7 +133,7 @@ func captureJob(ctx context.Context, cameraID int64, cfg config.Config, db *sqlx
 //	ctx: Job context.
 //	analysisSvc: The analysis service.
 func analysisTick(ctx context.Context, analysisSvc *service.AnalysisService) {
-	processed, err := analysisSvc.ProcessNextBatch(ctx, 5)
+	processed, err := analysisSvc.ProcessNextBatch(ctx, 50)
 	if err != nil {
 		log.Error().Err(err).Msg("analysis tick failed")
 		return

@@ -29,5 +29,5 @@ cameras:
   - name: "USB Camera"
     camera_type: "usb"
     device_path: "/dev/video0"
-    interval_seconds: 10
+    interval_seconds: 60
     enabled: true
