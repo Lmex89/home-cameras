@@ -35,18 +35,21 @@ type RetentionService struct {
 // Args:
 //
 //	cfg: Application configuration (thresholds, dirs).
-//	db: Shared database pool.
+//	db: Shared database pool (used for transactions).
+//	snaps: Snapshot repository.
+//	analyses: Snapshot analysis repository.
+//	jobs: Analysis job repository.
 //
 // Returns:
 //
 //	A ready RetentionService.
-func NewRetentionService(cfg config.Config, db *sqlx.DB) *RetentionService {
+func NewRetentionService(cfg config.Config, db *sqlx.DB, snaps *repository.SnapshotRepository, analyses *repository.SnapshotAnalysisRepository, jobs *repository.AnalysisJobRepository) *RetentionService {
 	return &RetentionService{
 		cfg:      cfg,
 		db:       db,
-		snaps:    repository.NewSnapshotRepository(db),
-		analyses: repository.NewSnapshotAnalysisRepository(db),
-		jobs:     repository.NewAnalysisJobRepository(db),
+		snaps:    snaps,
+		analyses: analyses,
+		jobs:     jobs,
 	}
 }
 

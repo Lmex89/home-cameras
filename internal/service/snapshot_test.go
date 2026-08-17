@@ -64,7 +64,7 @@ func TestCaptureSuccess(t *testing.T) {
 	snapshotURL := srv.URL + "/snap.jpg"
 	cam.SnapshotURL = &snapshotURL
 
-	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, onvif.NewFromConfig(cfg))
+	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), NewTimelapseService(cfg, db, repository.NewSnapshotRepository(db)), onvif.NewFromConfig(cfg))
 	snap, err := svc.Capture(ctx, *cam)
 	if err != nil {
 		t.Fatalf("capture: %v", err)
@@ -106,7 +106,7 @@ func TestCaptureHTTPError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, onvif.NewFromConfig(cfg))
+	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), NewTimelapseService(cfg, db, repository.NewSnapshotRepository(db)), onvif.NewFromConfig(cfg))
 	snap, err := svc.Capture(ctx, *cam)
 	if err != nil {
 		t.Fatalf("capture: %v", err)
@@ -121,7 +121,9 @@ func TestForceCaptureMissingCamera(t *testing.T) {
 	cfg, db := newTestDB(t)
 	ctx := context.Background()
 	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db),
-		repository.NewCameraRepository(db), onvif.NewFromConfig(cfg))
+		repository.NewCameraRepository(db), repository.NewAnalysisJobRepository(db),
+		repository.NewSnapshotAnalysisRepository(db), NewTimelapseService(cfg, db, repository.NewSnapshotRepository(db)),
+		onvif.NewFromConfig(cfg))
 	if _, err := svc.ForceCapture(ctx, 999); err == nil {
 		t.Fatal("expected error for missing camera")
 	}
@@ -160,7 +162,7 @@ func TestSnapshotReadModels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewSnapshotService(cfg, db, snaps, cams, onvif.NewFromConfig(cfg))
+	svc := NewSnapshotService(cfg, db, snaps, cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), NewTimelapseService(cfg, db, snaps), onvif.NewFromConfig(cfg))
 
 	dash, err := svc.GetDashboardData(ctx)
 	if err != nil || len(dash) != 2 {
@@ -231,7 +233,7 @@ func TestCaptureUSBFail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, onvif.NewFromConfig(cfg))
+	svc := NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), NewTimelapseService(cfg, db, repository.NewSnapshotRepository(db)), onvif.NewFromConfig(cfg))
 
 	// Missing device_path
 	snap, err := svc.Capture(ctx, *cam)

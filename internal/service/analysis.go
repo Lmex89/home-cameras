@@ -28,6 +28,7 @@ type AnalysisService struct {
 	jobs     *repository.AnalysisJobRepository
 	snaps    *repository.SnapshotRepository
 	analyses *repository.SnapshotAnalysisRepository
+	cams     *repository.CameraRepository
 	detector ml.Detector
 }
 
@@ -38,19 +39,23 @@ type AnalysisService struct {
 // Args:
 //
 //	cfg: Application configuration.
-//	db: Shared database pool.
+//	db: Shared database pool (used for transactions).
 //	detector: Object detector (stub fallback when unavailable).
+//	jobs: Analysis job repository.
+//	snaps: Snapshot repository.
+//	analyses: Snapshot analysis repository.
 //
 // Returns:
 //
 //	A ready AnalysisService.
-func NewAnalysisService(cfg config.Config, db *sqlx.DB, detector ml.Detector) *AnalysisService {
+func NewAnalysisService(cfg config.Config, db *sqlx.DB, detector ml.Detector, jobs *repository.AnalysisJobRepository, snaps *repository.SnapshotRepository, analyses *repository.SnapshotAnalysisRepository, cams *repository.CameraRepository) *AnalysisService {
 	return &AnalysisService{
 		cfg:      cfg,
 		db:       db,
-		jobs:     repository.NewAnalysisJobRepository(db),
-		snaps:    repository.NewSnapshotRepository(db),
-		analyses: repository.NewSnapshotAnalysisRepository(db),
+		jobs:     jobs,
+		snaps:    snaps,
+		analyses: analyses,
+		cams:     cams,
 		detector: detector,
 	}
 }
@@ -360,7 +365,7 @@ func (s *AnalysisService) GetPendingReviews(ctx context.Context, limit int) ([]d
 	if err != nil {
 		return nil, err
 	}
-	cams := repository.NewCameraRepository(s.db)
+	cams := s.cams
 	items := make([]domain.PendingReviewItem, 0, len(analyses))
 	for i := range analyses {
 		a := &analyses[i]

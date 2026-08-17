@@ -35,12 +35,15 @@ import (
 // filesystem work happen outside the database transaction (mirroring
 // the Python rule of keeping transaction scopes small).
 type SnapshotService struct {
-	cfg    config.Config
-	db     *sqlx.DB
-	snaps  *repository.SnapshotRepository
-	cams   *repository.CameraRepository
-	onvif  *onvif.Client
-	client *http.Client
+	cfg       config.Config
+	db        *sqlx.DB
+	snaps     *repository.SnapshotRepository
+	cams      *repository.CameraRepository
+	jobs      *repository.AnalysisJobRepository
+	analyses  *repository.SnapshotAnalysisRepository
+	timelapse *TimelapseService
+	onvif     *onvif.Client
+	client    *http.Client
 
 	// Manifest cache: the dashboard SPA polls /api/data/manifest.json
 	// repeatedly; a short TTL avoids hammering the DB (and the lock
@@ -61,18 +64,24 @@ const manifestTTL = 5 * time.Second
 //	db: The shared database pool (used to open transactions).
 //	snaps: Snapshot repository for reading/writing snapshot rows.
 //	cams: Camera repository for lookups (force capture, dashboards).
+//	jobs: Analysis job repository for enqueuing detection work.
+//	analyses: Snapshot analysis repository for report generation.
+//	timelapse: Timelapse service for video generation.
 //	onvifClient: ONVIF adapter used by the ONVIF/RTSP strategies.
 //
 // Returns:
 //
 //	A SnapshotService ready to capture.
-func NewSnapshotService(cfg config.Config, db *sqlx.DB, snaps *repository.SnapshotRepository, cams *repository.CameraRepository, onvifClient *onvif.Client) *SnapshotService {
+func NewSnapshotService(cfg config.Config, db *sqlx.DB, snaps *repository.SnapshotRepository, cams *repository.CameraRepository, jobs *repository.AnalysisJobRepository, analyses *repository.SnapshotAnalysisRepository, timelapse *TimelapseService, onvifClient *onvif.Client) *SnapshotService {
 	return &SnapshotService{
-		cfg:   cfg,
-		db:    db,
-		snaps: snaps,
-		cams:  cams,
-		onvif: onvifClient,
+		cfg:       cfg,
+		db:        db,
+		snaps:     snaps,
+		cams:      cams,
+		jobs:      jobs,
+		analyses:  analyses,
+		timelapse: timelapse,
+		onvif:     onvifClient,
 		// TLS verification is disabled because many cameras ship
 		// self-signed certificates (parity with the legacy httpx
 		// verify=False calls).
@@ -267,13 +276,12 @@ func (s *SnapshotService) persist(ctx context.Context, cam domain.Camera, imageP
 //
 //	Any persistence error.
 func (s *SnapshotService) enqueueAnalysis(ctx context.Context, snapshotID int64) error {
-	repo := repository.NewAnalysisJobRepository(s.db)
 	job := &domain.AnalysisJob{
 		SnapshotID: snapshotID,
 		JobType:    "yolo_detection",
 		Status:     "pending",
 	}
-	return repo.Add(ctx, job)
+	return s.jobs.Add(ctx, job)
 }
 
 // saveImage writes raw JPEG bytes to
@@ -628,7 +636,6 @@ func (s *SnapshotService) GetDailyReport(ctx context.Context, day time.Time) (*d
 	if err != nil {
 		return nil, err
 	}
-	analysesRepo := repository.NewSnapshotAnalysisRepository(s.db)
 
 	grouped := map[int64][]domain.Snapshot{}
 	for _, sn := range all {
@@ -648,7 +655,7 @@ func (s *SnapshotService) GetDailyReport(ctx context.Context, day time.Time) (*d
 		for _, sn := range snapList {
 			snapshotIDs = append(snapshotIDs, sn.ID)
 		}
-		analyses, err := analysesRepo.GetByCameraAndDate(ctx, snapshotIDs)
+		analyses, err := s.analyses.GetByCameraAndDate(ctx, snapshotIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -779,8 +786,7 @@ func (s *SnapshotService) GenerateDailyVideo(ctx context.Context, cameraID int64
 		return "", "", fmt.Errorf("no snapshots for camera %d on %s", cameraID, day.Format("2006-01-02"))
 	}
 	sort.Slice(snaps, func(i, j int) bool { return snaps[i].CapturedAt.Before(snaps[j].CapturedAt.Time) })
-	ts := NewTimelapseService(s.cfg, s.db, s.snaps)
-	return ts.RenderPlain(ctx, snaps, day)
+	return s.timelapse.RenderPlain(ctx, snaps, day)
 }
 
 // deref safely dereferences a *string for ONVIF call parameters.

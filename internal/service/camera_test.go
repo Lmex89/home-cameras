@@ -13,7 +13,7 @@ import (
 func TestCameraServiceCRUD(t *testing.T) {
 	cfg, db := newTestDB(t)
 	ctx := context.Background()
-	svc := NewCameraService(db, repository.NewCameraRepository(db), onvif.NewFromConfig(cfg))
+	svc := NewCameraService(repository.NewCameraRepository(db), onvif.NewFromConfig(cfg))
 
 	if _, err := svc.Get(ctx, 1); err == nil {
 		t.Fatal("expected error for missing camera")

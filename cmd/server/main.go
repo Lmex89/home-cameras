@@ -330,13 +330,15 @@ func main() {
 	// Repositories.
 	camerasRepo := repository.NewCameraRepository(db)
 	snapsRepo := repository.NewSnapshotRepository(db)
+	analysesRepo := repository.NewSnapshotAnalysisRepository(db)
+	jobsRepo := repository.NewAnalysisJobRepository(db)
 
 	// Services.
-	cameraSvc := service.NewCameraService(db, camerasRepo, onvifClient)
-	snapshotSvc := service.NewSnapshotService(cfg, db, snapsRepo, camerasRepo, onvifClient)
-	analysisSvc := service.NewAnalysisService(cfg, db, detector)
-	retentionSvc := service.NewRetentionService(cfg, db)
+	cameraSvc := service.NewCameraService(camerasRepo, onvifClient)
 	timelapseSvc := service.NewTimelapseService(cfg, db, snapsRepo)
+	snapshotSvc := service.NewSnapshotService(cfg, db, snapsRepo, camerasRepo, jobsRepo, analysesRepo, timelapseSvc, onvifClient)
+	analysisSvc := service.NewAnalysisService(cfg, db, detector, jobsRepo, snapsRepo, analysesRepo, camerasRepo)
+	retentionSvc := service.NewRetentionService(cfg, db, snapsRepo, analysesRepo, jobsRepo)
 	streamSvc := service.NewStreamService(onvifClient, cfg.StreamFPS)
 
 	// Scheduler with job callbacks.

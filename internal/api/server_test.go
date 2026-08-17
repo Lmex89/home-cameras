@@ -54,11 +54,11 @@ func newTestServer(t *testing.T) (*Server, config.Config) {
 	})
 	t.Cleanup(sched.Stop)
 
-	cameraSvc := service.NewCameraService(db, cams, onvifClient)
-	snapshotSvc := service.NewSnapshotService(cfg, db, snaps, cams, onvifClient)
-	analysisSvc := service.NewAnalysisService(cfg, db, detector)
-	retentionSvc := service.NewRetentionService(cfg, db)
+	cameraSvc := service.NewCameraService(cams, onvifClient)
 	timelapseSvc := service.NewTimelapseService(cfg, db, snaps)
+	snapshotSvc := service.NewSnapshotService(cfg, db, snaps, cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), timelapseSvc, onvifClient)
+	analysisSvc := service.NewAnalysisService(cfg, db, detector, repository.NewAnalysisJobRepository(db), snaps, repository.NewSnapshotAnalysisRepository(db), cams)
+	retentionSvc := service.NewRetentionService(cfg, db, snaps, repository.NewSnapshotAnalysisRepository(db), repository.NewAnalysisJobRepository(db))
 
 	deps := Deps{
 		Cfg: cfg, DB: db,

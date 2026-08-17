@@ -142,7 +142,7 @@ func TestAnalysisPipeline(t *testing.T) {
 		t.Fatalf("add snapshot: %v", err)
 	}
 
-	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg))
+	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), snaps, repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	job, err := svc.Enqueue(ctx, snap.ID, "yolo_detection", 0)
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -214,7 +214,7 @@ func TestAnalysisImageMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg))
+	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), snaps, repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	if _, err := svc.Enqueue(ctx, snap.ID, "yolo_detection", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestAnalysisUnknownJobType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg))
+	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), snaps, repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	processed, err := svc.ProcessNextBatch(ctx, 5)
 	if err != nil || processed != 0 {
 		t.Fatalf("processed = %d err %v (want 0, nil)", processed, err)
@@ -288,7 +288,7 @@ func TestAnalysisAnomalyJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg))
+	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), snaps, repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	if _, err := svc.Enqueue(ctx, snap.ID, "anomaly_scoring", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestAnalysisAnomalyJob(t *testing.T) {
 // TestUpdateReviewNotFound verifies a missing analysis returns nil.
 func TestUpdateReviewNotFound(t *testing.T) {
 	cfg, db := newTestDB(t)
-	svc := NewAnalysisService(analysisTestCfg(cfg), db, ml.NewDetector(cfg))
+	svc := NewAnalysisService(analysisTestCfg(cfg), db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), repository.NewSnapshotRepository(db), repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	got, err := svc.UpdateReview(context.Background(), 999, true, nil)
 	if err != nil || got != nil {
 		t.Fatalf("got %v err %v (want nil, nil)", got, err)
@@ -347,7 +347,7 @@ func TestGetDetections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg))
+	svc := NewAnalysisService(cfg, db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), snaps, repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	rows, err := svc.GetDetections(ctx, 7, 0, "person", 10, 0, "")
 	if err != nil {
 		t.Fatalf("detections: %v", err)

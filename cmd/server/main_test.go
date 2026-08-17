@@ -96,7 +96,8 @@ func TestCaptureJobSuccess(t *testing.T) {
 	}
 
 	snaps := repository.NewSnapshotRepository(db)
-	svc := service.NewSnapshotService(cfg, db, snaps, cams, onvif.NewFromConfig(cfg))
+	timelapseSvc := service.NewTimelapseService(cfg, db, snaps)
+	svc := service.NewSnapshotService(cfg, db, snaps, cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), timelapseSvc, onvif.NewFromConfig(cfg))
 	streamSvc := service.NewStreamService(onvif.NewFromConfig(cfg), cfg.StreamFPS)
 	captureJob(context.Background(), cam.ID, cfg, db, svc, streamSvc)
 
@@ -114,7 +115,9 @@ func TestCaptureJobGuards(t *testing.T) {
 	if err := cams.Add(context.Background(), cam); err != nil {
 		t.Fatal(err)
 	}
-	svc := service.NewSnapshotService(cfg, db, repository.NewSnapshotRepository(db), cams, onvif.NewFromConfig(cfg))
+	snaps2 := repository.NewSnapshotRepository(db)
+	timelapseSvc2 := service.NewTimelapseService(cfg, db, snaps2)
+	svc := service.NewSnapshotService(cfg, db, snaps2, cams, repository.NewAnalysisJobRepository(db), repository.NewSnapshotAnalysisRepository(db), timelapseSvc2, onvif.NewFromConfig(cfg))
 	streamSvc := service.NewStreamService(onvif.NewFromConfig(cfg), cfg.StreamFPS)
 	captureJob(context.Background(), cam.ID, cfg, db, svc, streamSvc) // disabled -> no-op
 	captureJob(context.Background(), 999, cfg, db, svc, streamSvc)    // missing -> warn
@@ -123,7 +126,7 @@ func TestCaptureJobGuards(t *testing.T) {
 // TestAnalysisTick verifies the empty-queue tick returns cleanly.
 func TestAnalysisTick(t *testing.T) {
 	cfg, db := newJobDB(t)
-	svc := service.NewAnalysisService(cfg, db, ml.NewDetector(cfg))
+	svc := service.NewAnalysisService(cfg, db, ml.NewDetector(cfg), repository.NewAnalysisJobRepository(db), repository.NewSnapshotRepository(db), repository.NewSnapshotAnalysisRepository(db), repository.NewCameraRepository(db))
 	analysisTick(context.Background(), svc)
 }
 
@@ -138,7 +141,7 @@ func TestRetentionJob(t *testing.T) {
 		TimelapseRun:  func(ctx context.Context, day time.Time) {},
 		HealthRun:     func(ctx context.Context) {},
 	})
-	svc := service.NewRetentionService(cfg, db)
+	svc := service.NewRetentionService(cfg, db, repository.NewSnapshotRepository(db), repository.NewSnapshotAnalysisRepository(db), repository.NewAnalysisJobRepository(db))
 	retentionJob(context.Background(), sched, svc)
 }
 

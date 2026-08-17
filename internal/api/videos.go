@@ -34,7 +34,11 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	cctx, cancel := requestTimeout(r, 30*time.Minute)
+	if payload.CameraID < 1 {
+		writeError(w, http.StatusBadRequest, "camera_id must be >= 1")
+		return
+	}
+	cctx, cancel := requestTimeout(r, time.Hour)
 	defer cancel()
 
 	outputPath, tempDir, err := s.deps.SnapshotSvc.GenerateDailyVideo(cctx, payload.CameraID, payload.Date.Time(), payload.Hour)
@@ -71,6 +75,10 @@ func (s *Server) createAnnotatedVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if payload.CameraID < 1 {
+		writeError(w, http.StatusBadRequest, "camera_id must be >= 1")
+		return
+	}
 	var classes map[string]bool
 	if payload.Classes != nil && strings.TrimSpace(*payload.Classes) != "" {
 		classes = map[string]bool{}
@@ -80,7 +88,7 @@ func (s *Server) createAnnotatedVideo(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	cctx, cancel := requestTimeout(r, 30*time.Minute)
+	cctx, cancel := requestTimeout(r, time.Hour)
 	defer cancel()
 
 	cam, err := s.deps.CameraSvc.Get(cctx, payload.CameraID)

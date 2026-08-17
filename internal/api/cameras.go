@@ -120,6 +120,18 @@ func (s *Server) updateCamera(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if payload.Port != nil && (*payload.Port < 1 || *payload.Port > 65535) {
+		writeError(w, http.StatusBadRequest, "port must be between 1 and 65535")
+		return
+	}
+	if payload.IntervalSeconds != nil && *payload.IntervalSeconds < 10 {
+		writeError(w, http.StatusBadRequest, "interval_seconds must be >= 10")
+		return
+	}
+	if payload.CameraType != nil && *payload.CameraType != "ip" && *payload.CameraType != "usb" {
+		writeError(w, http.StatusBadRequest, "camera_type must be 'ip' or 'usb'")
+		return
+	}
 	cam, err := s.deps.CameraSvc.Update(r.Context(), id, payload)
 	if err != nil {
 		mapRepoErr(w, err, "Camera not found")
@@ -159,6 +171,10 @@ func (s *Server) testCamera(w http.ResponseWriter, r *http.Request) {
 	var payload domain.CameraCreate
 	if err := readJSON(r, &payload); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if payload.Port < 1 || payload.Port > 65535 {
+		writeError(w, http.StatusBadRequest, "port must be between 1 and 65535")
 		return
 	}
 	log.Info().Str("host", payload.Host).Int("port", payload.Port).Msg("testing camera via API")

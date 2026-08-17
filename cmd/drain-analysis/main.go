@@ -1,3 +1,5 @@
+// Package main provides a CLI tool that drains the analysis job queue
+// by processing all pending jobs in a tight loop with the real YOLO engine.
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"github.com/Lmex89/home-cameras/internal/config"
 	"github.com/Lmex89/home-cameras/internal/database"
 	"github.com/Lmex89/home-cameras/internal/infrastructure/ml"
+	"github.com/Lmex89/home-cameras/internal/repository"
 	"github.com/Lmex89/home-cameras/internal/service"
 )
 
@@ -31,7 +34,11 @@ func main() {
 	defer db.Close()
 
 	detector := ml.NewDetector(cfg)
-	svc := service.NewAnalysisService(cfg, db, detector)
+	svc := service.NewAnalysisService(cfg, db, detector,
+		repository.NewAnalysisJobRepository(db),
+		repository.NewSnapshotRepository(db),
+		repository.NewSnapshotAnalysisRepository(db),
+		repository.NewCameraRepository(db))
 
 	total := 0
 	start := time.Now()

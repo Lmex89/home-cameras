@@ -5,9 +5,6 @@ package service
 
 import (
 	"context"
-	"errors"
-
-	"github.com/jmoiron/sqlx"
 
 	"github.com/Lmex89/home-cameras/internal/domain"
 	"github.com/Lmex89/home-cameras/internal/infrastructure/onvif"
@@ -16,14 +13,22 @@ import (
 
 // CameraService coordinates camera CRUD and ONVIF connectivity tests.
 type CameraService struct {
-	db    *sqlx.DB
 	repo  *repository.CameraRepository
 	onvif *onvif.Client
 }
 
 // NewCameraService builds the camera service with injected dependencies.
-func NewCameraService(db *sqlx.DB, repo *repository.CameraRepository, onvifClient *onvif.Client) *CameraService {
-	return &CameraService{db: db, repo: repo, onvif: onvifClient}
+//
+// Args:
+//
+//	repo: Camera repository.
+//	onvifClient: ONVIF client for connectivity tests.
+//
+// Returns:
+//
+//	A ready CameraService.
+func NewCameraService(repo *repository.CameraRepository, onvifClient *onvif.Client) *CameraService {
+	return &CameraService{repo: repo, onvif: onvifClient}
 }
 
 // List returns all cameras.
@@ -125,6 +130,3 @@ func (s *CameraService) Test(ctx context.Context, host string, port int, user, p
 		Error:     errMsg,
 	}, nil
 }
-
-// ErrNotFound is exported for handlers to map to 404 responses.
-var ErrNotFound = errors.New("camera not found")

@@ -79,6 +79,10 @@ func (s *Server) bulkReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if len(payload.AnalysisIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "analysis_ids must not be empty")
+		return
+	}
 	updated := 0
 	errorsOut := []map[string]any{}
 	for _, id := range payload.AnalysisIDs {

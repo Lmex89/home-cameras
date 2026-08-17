@@ -201,7 +201,7 @@ func TestRetentionRunFullPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewRetentionService(cfg, db)
+	svc := NewRetentionService(cfg, db, repository.NewSnapshotRepository(db), repository.NewSnapshotAnalysisRepository(db), repository.NewAnalysisJobRepository(db))
 	result, err := svc.Run(ctx)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -291,7 +291,7 @@ func TestRetentionPurge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := NewRetentionService(cfg, db)
+	svc := NewRetentionService(cfg, db, repository.NewSnapshotRepository(db), repository.NewSnapshotAnalysisRepository(db), repository.NewAnalysisJobRepository(db))
 	result, err := svc.PurgeOlderThan(ctx, 5)
 	if err != nil {
 		t.Fatalf("purge: %v", err)
