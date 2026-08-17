@@ -7,9 +7,8 @@ server {
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml;
 
-    # Docker embedded DNS — resolve upstream at request time so nginx
-    # starts even if the cameras service is not yet registered, and
-    # recovers after container recreate without a full nginx restart.
+    # Resolve the backend through Docker DNS at request time. This keeps
+    # nginx startable during container recreation and DNS registration races.
     resolver 127.0.0.11 valid=10s ipv6=off;
     resolver_timeout 5s;
 
